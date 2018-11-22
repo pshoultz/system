@@ -1,0 +1,383 @@
+   1               		.file	"matrix.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__tmp_reg__ = 0
+   6               	__zero_reg__ = 1
+   7               		.text
+   8               	.Ltext0:
+   9               		.cfi_sections	.debug_frame
+  10               		.section	.text.matrix_rows,"ax",@progbits
+  11               		.weak	matrix_rows
+  13               	matrix_rows:
+  14               	.LFB1:
+  15               		.file 1 "../../tmk_core/common/matrix.c"
+   1:../../tmk_core/common/matrix.c **** /*
+   2:../../tmk_core/common/matrix.c **** Copyright 2016 Jun Wako <wakojun@gmail.com>
+   3:../../tmk_core/common/matrix.c **** 
+   4:../../tmk_core/common/matrix.c **** This program is free software: you can redistribute it and/or modify
+   5:../../tmk_core/common/matrix.c **** it under the terms of the GNU General Public License as published by
+   6:../../tmk_core/common/matrix.c **** the Free Software Foundation, either version 2 of the License, or
+   7:../../tmk_core/common/matrix.c **** (at your option) any later version.
+   8:../../tmk_core/common/matrix.c **** 
+   9:../../tmk_core/common/matrix.c **** This program is distributed in the hope that it will be useful,
+  10:../../tmk_core/common/matrix.c **** but WITHOUT ANY WARRANTY; without even the implied warranty of
+  11:../../tmk_core/common/matrix.c **** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  12:../../tmk_core/common/matrix.c **** GNU General Public License for more details.
+  13:../../tmk_core/common/matrix.c **** 
+  14:../../tmk_core/common/matrix.c **** You should have received a copy of the GNU General Public License
+  15:../../tmk_core/common/matrix.c **** along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  16:../../tmk_core/common/matrix.c **** */
+  17:../../tmk_core/common/matrix.c **** #include "print.h"
+  18:../../tmk_core/common/matrix.c **** #include "matrix.h"
+  19:../../tmk_core/common/matrix.c **** 
+  20:../../tmk_core/common/matrix.c **** 
+  21:../../tmk_core/common/matrix.c **** __attribute__ ((weak))
+  22:../../tmk_core/common/matrix.c **** uint8_t matrix_rows(void)
+  23:../../tmk_core/common/matrix.c **** {
+  16               		.loc 1 23 1 view -0
+  17               		.cfi_startproc
+  18               	/* prologue: function */
+  19               	/* frame size = 0 */
+  20               	/* stack size = 0 */
+  21               	.L__stack_usage = 0
+  24:../../tmk_core/common/matrix.c ****     return MATRIX_ROWS;
+  22               		.loc 1 24 5 view .LVU1
+  25:../../tmk_core/common/matrix.c **** }
+  23               		.loc 1 25 1 is_stmt 0 view .LVU2
+  24 0000 88E0      		ldi r24,lo8(8)
+  25               	/* epilogue start */
+  26 0002 0895      		ret
+  27               		.cfi_endproc
+  28               	.LFE1:
+  30               		.section	.text.matrix_cols,"ax",@progbits
+  31               		.weak	matrix_cols
+  33               	matrix_cols:
+  34               	.LFB10:
+  35               		.cfi_startproc
+  36               	/* prologue: function */
+  37               	/* frame size = 0 */
+  38               	/* stack size = 0 */
+  39               	.L__stack_usage = 0
+  40 0000 88E0      		ldi r24,lo8(8)
+  41               	/* epilogue start */
+  42 0002 0895      		ret
+  43               		.cfi_endproc
+  44               	.LFE10:
+  46               		.section	.text.matrix_clear,"ax",@progbits
+  47               		.weak	matrix_clear
+  49               	matrix_clear:
+  50               	.LFB12:
+  51               		.cfi_startproc
+  52               	/* prologue: function */
+  53               	/* frame size = 0 */
+  54               	/* stack size = 0 */
+  55               	.L__stack_usage = 0
+  56               	/* epilogue start */
+  57 0000 0895      		ret
+  58               		.cfi_endproc
+  59               	.LFE12:
+  61               		.section	.text.matrix_setup,"ax",@progbits
+  62               		.weak	matrix_setup
+  64               	matrix_setup:
+  65               	.LFB4:
+  26:../../tmk_core/common/matrix.c **** 
+  27:../../tmk_core/common/matrix.c **** __attribute__ ((weak))
+  28:../../tmk_core/common/matrix.c **** uint8_t matrix_cols(void)
+  29:../../tmk_core/common/matrix.c **** {
+  30:../../tmk_core/common/matrix.c ****     return MATRIX_COLS;
+  31:../../tmk_core/common/matrix.c **** }
+  32:../../tmk_core/common/matrix.c **** 
+  33:../../tmk_core/common/matrix.c **** __attribute__ ((weak))
+  34:../../tmk_core/common/matrix.c **** void matrix_clear(void)
+  35:../../tmk_core/common/matrix.c **** {
+  36:../../tmk_core/common/matrix.c **** }
+  37:../../tmk_core/common/matrix.c **** 
+  38:../../tmk_core/common/matrix.c **** __attribute__ ((weak))
+  39:../../tmk_core/common/matrix.c **** void matrix_setup(void) {}
+  66               		.loc 1 39 25 is_stmt 1 view -0
+  67               		.cfi_startproc
+  68               	/* prologue: function */
+  69               	/* frame size = 0 */
+  70               	/* stack size = 0 */
+  71               	.L__stack_usage = 0
+  72               		.loc 1 39 26 view .LVU4
+  73               	/* epilogue start */
+  74               		.loc 1 39 1 is_stmt 0 view .LVU5
+  75 0000 0895      		ret
+  76               		.cfi_endproc
+  77               	.LFE4:
+  79               		.section	.text.matrix_is_on,"ax",@progbits
+  80               		.weak	matrix_is_on
+  82               	matrix_is_on:
+  83               	.LVL0:
+  84               	.LFB5:
+  40:../../tmk_core/common/matrix.c **** 
+  41:../../tmk_core/common/matrix.c **** __attribute__ ((weak))
+  42:../../tmk_core/common/matrix.c **** bool matrix_is_on(uint8_t row, uint8_t col)
+  43:../../tmk_core/common/matrix.c **** {
+  85               		.loc 1 43 1 is_stmt 1 view -0
+  86               		.cfi_startproc
+  87               		.loc 1 43 1 is_stmt 0 view .LVU7
+  88 0000 CF93      		push r28
+  89               	.LCFI0:
+  90               		.cfi_def_cfa_offset 3
+  91               		.cfi_offset 28, -2
+  92               	/* prologue: function */
+  93               	/* frame size = 0 */
+  94               	/* stack size = 1 */
+  95               	.L__stack_usage = 1
+  96 0002 C62F      		mov r28,r22
+  44:../../tmk_core/common/matrix.c ****     return (matrix_get_row(row) & (1<<col));
+  97               		.loc 1 44 5 is_stmt 1 view .LVU8
+  98               		.loc 1 44 13 is_stmt 0 view .LVU9
+  99 0004 0E94 0000 		call matrix_get_row
+ 100               	.LVL1:
+ 101               		.loc 1 44 37 view .LVU10
+ 102 0008 21E0      		ldi r18,lo8(1)
+ 103 000a 30E0      		ldi r19,0
+ 104 000c 00C0      		rjmp 2f
+ 105               		1:
+ 106 000e 220F      		lsl r18
+ 107 0010 331F      		rol r19
+ 108               		2:
+ 109 0012 CA95      		dec r28
+ 110 0014 02F4      		brpl 1b
+ 111               		.loc 1 44 13 view .LVU11
+ 112 0016 90E0      		ldi r25,0
+ 113               		.loc 1 44 33 view .LVU12
+ 114 0018 2823      		and r18,r24
+ 115 001a 3923      		and r19,r25
+ 116 001c 81E0      		ldi r24,lo8(1)
+ 117 001e 232B      		or r18,r19
+ 118 0020 01F4      		brne .L6
+ 119 0022 80E0      		ldi r24,0
+ 120               	.L6:
+ 121               	/* epilogue start */
+  45:../../tmk_core/common/matrix.c **** }
+ 122               		.loc 1 45 1 view .LVU13
+ 123 0024 CF91      		pop r28
+ 124               	.LVL2:
+ 125               		.loc 1 45 1 view .LVU14
+ 126 0026 0895      		ret
+ 127               		.cfi_endproc
+ 128               	.LFE5:
+ 130               		.section	.rodata.matrix_print.str1.1,"aMS",@progbits,1
+ 131               	.LC0:
+ 132 0000 00        		.string	""
+ 133               		.section	.text.matrix_print,"ax",@progbits
+ 134               		.weak	matrix_print
+ 136               	matrix_print:
+ 137               	.LFB6:
+  46:../../tmk_core/common/matrix.c **** 
+  47:../../tmk_core/common/matrix.c **** __attribute__ ((weak))
+  48:../../tmk_core/common/matrix.c **** void matrix_print(void)
+  49:../../tmk_core/common/matrix.c **** {
+ 138               		.loc 1 49 1 is_stmt 1 view -0
+ 139               		.cfi_startproc
+ 140 0000 EF92      		push r14
+ 141               	.LCFI1:
+ 142               		.cfi_def_cfa_offset 3
+ 143               		.cfi_offset 14, -2
+ 144 0002 FF92      		push r15
+ 145               	.LCFI2:
+ 146               		.cfi_def_cfa_offset 4
+ 147               		.cfi_offset 15, -3
+ 148 0004 0F93      		push r16
+ 149               	.LCFI3:
+ 150               		.cfi_def_cfa_offset 5
+ 151               		.cfi_offset 16, -4
+ 152 0006 1F93      		push r17
+ 153               	.LCFI4:
+ 154               		.cfi_def_cfa_offset 6
+ 155               		.cfi_offset 17, -5
+ 156 0008 CF93      		push r28
+ 157               	.LCFI5:
+ 158               		.cfi_def_cfa_offset 7
+ 159               		.cfi_offset 28, -6
+ 160 000a DF93      		push r29
+ 161               	.LCFI6:
+ 162               		.cfi_def_cfa_offset 8
+ 163               		.cfi_offset 29, -7
+ 164               	/* prologue: function */
+ 165               	/* frame size = 0 */
+ 166               	/* stack size = 6 */
+ 167               	.L__stack_usage = 6
+  50:../../tmk_core/common/matrix.c **** #if (MATRIX_COLS <= 8)
+  51:../../tmk_core/common/matrix.c ****     print("r/c 01234567\n");
+ 168               		.loc 1 51 5 view .LVU16
+ 169               	.LBB2:
+ 170               		.loc 1 51 5 view .LVU17
+ 171               		.loc 1 51 5 view .LVU18
+ 172               	.LBE2:
+ 173 000c 80E0      		ldi r24,lo8(__c.1790)
+ 174 000e 90E0      		ldi r25,hi8(__c.1790)
+ 175 0010 0E94 0000 		call xputs
+  52:../../tmk_core/common/matrix.c **** #elif (MATRIX_COLS <= 16)
+  53:../../tmk_core/common/matrix.c ****     print("r/c 0123456789ABCDEF\n");
+  54:../../tmk_core/common/matrix.c **** #elif (MATRIX_COLS <= 32)
+  55:../../tmk_core/common/matrix.c ****     print("r/c 0123456789ABCDEF0123456789ABCDEF\n");
+  56:../../tmk_core/common/matrix.c **** #endif
+  57:../../tmk_core/common/matrix.c **** 
+  58:../../tmk_core/common/matrix.c ****     for (uint8_t row = 0; row < MATRIX_ROWS; row++) {
+ 176               		.loc 1 58 5 view .LVU19
+ 177               	.LBB3:
+ 178               		.loc 1 58 10 view .LVU20
+ 179               	.LBE3:
+  51:../../tmk_core/common/matrix.c **** #elif (MATRIX_COLS <= 16)
+ 180               		.loc 1 51 5 is_stmt 0 view .LVU21
+ 181 0014 D0E0      		ldi r29,0
+ 182 0016 C0E0      		ldi r28,0
+ 183               	.LBB5:
+  59:../../tmk_core/common/matrix.c **** 
+  60:../../tmk_core/common/matrix.c **** #if (MATRIX_COLS <= 8)
+  61:../../tmk_core/common/matrix.c ****         xprintf("%02X: %08b%s\n", row, bitrev(matrix_get_row(row)),
+ 184               		.loc 1 61 9 view .LVU22
+ 185 0018 80E0      		ldi r24,lo8(.LC0)
+ 186 001a E82E      		mov r14,r24
+ 187 001c 80E0      		ldi r24,hi8(.LC0)
+ 188 001e F82E      		mov r15,r24
+ 189 0020 00E0      		ldi r16,lo8(__c.1793)
+ 190 0022 10E0      		ldi r17,hi8(__c.1793)
+ 191               	.L8:
+ 192               		.loc 1 61 9 is_stmt 1 discriminator 3 view .LVU23
+ 193 0024 8C2F      		mov r24,r28
+ 194 0026 0E94 0000 		call matrix_get_row
+ 195 002a 0E94 0000 		call bitrev
+ 196               	.LBB4:
+ 197               		.loc 1 61 9 discriminator 3 view .LVU24
+ 198               		.loc 1 61 9 discriminator 3 view .LVU25
+ 199               	.LBE4:
+ 200 002e FF92      		push r15
+ 201               	.LCFI7:
+ 202               		.cfi_def_cfa_offset 9
+ 203 0030 EF92      		push r14
+ 204               	.LCFI8:
+ 205               		.cfi_def_cfa_offset 10
+ 206 0032 1F92      		push __zero_reg__
+ 207               	.LCFI9:
+ 208               		.cfi_def_cfa_offset 11
+ 209 0034 8F93      		push r24
+ 210               	.LCFI10:
+ 211               		.cfi_def_cfa_offset 12
+ 212 0036 DF93      		push r29
+ 213               	.LCFI11:
+ 214               		.cfi_def_cfa_offset 13
+ 215 0038 CF93      		push r28
+ 216               	.LCFI12:
+ 217               		.cfi_def_cfa_offset 14
+ 218 003a 1F93      		push r17
+ 219               	.LCFI13:
+ 220               		.cfi_def_cfa_offset 15
+ 221 003c 0F93      		push r16
+ 222               	.LCFI14:
+ 223               		.cfi_def_cfa_offset 16
+ 224 003e 0E94 0000 		call __xprintf
+ 225 0042 2196      		adiw r28,1
+  58:../../tmk_core/common/matrix.c **** 
+ 226               		.loc 1 58 5 is_stmt 0 discriminator 3 view .LVU26
+ 227 0044 8DB7      		in r24,__SP_L__
+ 228 0046 9EB7      		in r25,__SP_H__
+ 229 0048 0896      		adiw r24,8
+ 230 004a 0FB6      		in __tmp_reg__,__SREG__
+ 231 004c F894      		cli
+ 232 004e 9EBF      		out __SP_H__,r25
+ 233 0050 0FBE      		out __SREG__,__tmp_reg__
+ 234 0052 8DBF      		out __SP_L__,r24
+ 235               	.LCFI15:
+ 236               		.cfi_def_cfa_offset 8
+ 237 0054 C830      		cpi r28,8
+ 238 0056 D105      		cpc r29,__zero_reg__
+ 239 0058 01F4      		brne .L8
+ 240               	/* epilogue start */
+ 241               	.LBE5:
+  62:../../tmk_core/common/matrix.c **** #elif (MATRIX_COLS <= 16)
+  63:../../tmk_core/common/matrix.c ****         xprintf("%02X: %016b%s\n", row, bitrev16(matrix_get_row(row)),
+  64:../../tmk_core/common/matrix.c **** #elif (MATRIX_COLS <= 32)
+  65:../../tmk_core/common/matrix.c ****         xprintf("%02X: %032b%s\n", row, bitrev32(matrix_get_row(row)),
+  66:../../tmk_core/common/matrix.c **** #endif
+  67:../../tmk_core/common/matrix.c **** #ifdef MATRIX_HAS_GHOST
+  68:../../tmk_core/common/matrix.c ****         matrix_has_ghost_in_row(row) ?  " <ghost" : ""
+  69:../../tmk_core/common/matrix.c **** #else
+  70:../../tmk_core/common/matrix.c ****         ""
+  71:../../tmk_core/common/matrix.c **** #endif
+  72:../../tmk_core/common/matrix.c ****         );
+  73:../../tmk_core/common/matrix.c ****     }
+  74:../../tmk_core/common/matrix.c **** }
+ 242               		.loc 1 74 1 view .LVU27
+ 243 005a DF91      		pop r29
+ 244 005c CF91      		pop r28
+ 245 005e 1F91      		pop r17
+ 246 0060 0F91      		pop r16
+ 247 0062 FF90      		pop r15
+ 248 0064 EF90      		pop r14
+ 249 0066 0895      		ret
+ 250               		.cfi_endproc
+ 251               	.LFE6:
+ 253               		.section	.text.matrix_power_up,"ax",@progbits
+ 254               		.weak	matrix_power_up
+ 256               	matrix_power_up:
+ 257               	.LFB14:
+ 258               		.cfi_startproc
+ 259               	/* prologue: function */
+ 260               	/* frame size = 0 */
+ 261               	/* stack size = 0 */
+ 262               	.L__stack_usage = 0
+ 263               	/* epilogue start */
+ 264 0000 0895      		ret
+ 265               		.cfi_endproc
+ 266               	.LFE14:
+ 268               		.section	.text.matrix_power_down,"ax",@progbits
+ 269               		.weak	matrix_power_down
+ 271               	matrix_power_down:
+ 272               	.LFB16:
+ 273               		.cfi_startproc
+ 274               	/* prologue: function */
+ 275               	/* frame size = 0 */
+ 276               	/* stack size = 0 */
+ 277               	.L__stack_usage = 0
+ 278               	/* epilogue start */
+ 279 0000 0895      		ret
+ 280               		.cfi_endproc
+ 281               	.LFE16:
+ 283               		.section	.progmem.data.__c.1793,"a"
+ 286               	__c.1793:
+ 287 0000 2530 3258 		.string	"%02X: %08b%s\n"
+ 287      3A20 2530 
+ 287      3862 2573 
+ 287      0A00 
+ 288               		.section	.progmem.data.__c.1790,"a"
+ 291               	__c.1790:
+ 292 0000 722F 6320 		.string	"r/c 01234567\n"
+ 292      3031 3233 
+ 292      3435 3637 
+ 292      0A00 
+ 293               		.text
+ 294               	.Letext0:
+ 295               		.file 2 "/usr/avr/include/stdint.h"
+ 296               		.file 3 "../../tmk_core/common/avr/xprintf.h"
+ 297               		.file 4 "../../tmk_core/common/matrix.h"
+DEFINED SYMBOLS
+                            *ABS*:0000000000000000 matrix.c
+     /tmp/ccWXP5Px.s:2      *ABS*:000000000000003e __SP_H__
+     /tmp/ccWXP5Px.s:3      *ABS*:000000000000003d __SP_L__
+     /tmp/ccWXP5Px.s:4      *ABS*:000000000000003f __SREG__
+     /tmp/ccWXP5Px.s:5      *ABS*:0000000000000000 __tmp_reg__
+     /tmp/ccWXP5Px.s:6      *ABS*:0000000000000001 __zero_reg__
+     /tmp/ccWXP5Px.s:13     .text.matrix_rows:0000000000000000 matrix_rows
+     /tmp/ccWXP5Px.s:33     .text.matrix_cols:0000000000000000 matrix_cols
+     /tmp/ccWXP5Px.s:49     .text.matrix_clear:0000000000000000 matrix_clear
+     /tmp/ccWXP5Px.s:64     .text.matrix_setup:0000000000000000 matrix_setup
+     /tmp/ccWXP5Px.s:82     .text.matrix_is_on:0000000000000000 matrix_is_on
+     /tmp/ccWXP5Px.s:136    .text.matrix_print:0000000000000000 matrix_print
+     /tmp/ccWXP5Px.s:291    .progmem.data.__c.1790:0000000000000000 __c.1790
+     /tmp/ccWXP5Px.s:286    .progmem.data.__c.1793:0000000000000000 __c.1793
+     /tmp/ccWXP5Px.s:256    .text.matrix_power_up:0000000000000000 matrix_power_up
+     /tmp/ccWXP5Px.s:271    .text.matrix_power_down:0000000000000000 matrix_power_down
+
+UNDEFINED SYMBOLS
+matrix_get_row
+xputs
+bitrev
+__xprintf
+__do_copy_data

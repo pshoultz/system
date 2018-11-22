@@ -1,0 +1,1788 @@
+   1               		.file	"rn42.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__tmp_reg__ = 0
+   6               	__zero_reg__ = 1
+   7               		.text
+   8               	.Ltext0:
+   9               		.cfi_sections	.debug_frame
+  10               		.section	.text.keyboard_leds,"ax",@progbits
+  12               	keyboard_leds:
+  13               	.LFB112:
+  14               		.file 1 "rn42/rn42.c"
+   1:rn42/rn42.c   **** #include <avr/io.h>
+   2:rn42/rn42.c   **** #include "host.h"
+   3:rn42/rn42.c   **** #include "host_driver.h"
+   4:rn42/rn42.c   **** #include "serial.h"
+   5:rn42/rn42.c   **** #include "rn42.h"
+   6:rn42/rn42.c   **** #include "print.h"
+   7:rn42/rn42.c   **** #include "timer.h"
+   8:rn42/rn42.c   **** #include "wait.h"
+   9:rn42/rn42.c   **** 
+  10:rn42/rn42.c   **** 
+  11:rn42/rn42.c   **** /* Host driver */
+  12:rn42/rn42.c   **** static uint8_t keyboard_leds(void);
+  13:rn42/rn42.c   **** static void send_keyboard(report_keyboard_t *report);
+  14:rn42/rn42.c   **** static void send_mouse(report_mouse_t *report);
+  15:rn42/rn42.c   **** static void send_system(uint16_t data);
+  16:rn42/rn42.c   **** static void send_consumer(uint16_t data);
+  17:rn42/rn42.c   **** 
+  18:rn42/rn42.c   **** host_driver_t rn42_driver = {
+  19:rn42/rn42.c   ****     keyboard_leds,
+  20:rn42/rn42.c   ****     send_keyboard,
+  21:rn42/rn42.c   ****     send_mouse,
+  22:rn42/rn42.c   ****     send_system,
+  23:rn42/rn42.c   ****     send_consumer
+  24:rn42/rn42.c   **** };
+  25:rn42/rn42.c   **** 
+  26:rn42/rn42.c   **** 
+  27:rn42/rn42.c   **** void rn42_init(void)
+  28:rn42/rn42.c   **** {
+  29:rn42/rn42.c   ****     // JTAG disable for PORT F. write JTD bit twice within four cycles.
+  30:rn42/rn42.c   ****     MCUCR |= (1<<JTD);
+  31:rn42/rn42.c   ****     MCUCR |= (1<<JTD);
+  32:rn42/rn42.c   **** 
+  33:rn42/rn42.c   ****     // PF7: BT connection control(high: connect, low: disconnect)
+  34:rn42/rn42.c   ****     rn42_autoconnect();
+  35:rn42/rn42.c   **** 
+  36:rn42/rn42.c   ****     // PF6: linked(input without pull-up)
+  37:rn42/rn42.c   ****     DDRF  &= ~(1<<6);
+  38:rn42/rn42.c   ****     PORTF |=  (1<<6);
+  39:rn42/rn42.c   **** 
+  40:rn42/rn42.c   ****     // PF1: RTS(low: allowed to send, high: not allowed)
+  41:rn42/rn42.c   ****     DDRF &= ~(1<<1);
+  42:rn42/rn42.c   ****     PORTF &= ~(1<<1);
+  43:rn42/rn42.c   **** 
+  44:rn42/rn42.c   ****     // PD5: CTS(low: allow to send, high:not allow)
+  45:rn42/rn42.c   ****     DDRD |= (1<<5);
+  46:rn42/rn42.c   ****     PORTD &= ~(1<<5);
+  47:rn42/rn42.c   **** 
+  48:rn42/rn42.c   ****     serial_init();
+  49:rn42/rn42.c   **** }
+  50:rn42/rn42.c   **** 
+  51:rn42/rn42.c   **** int16_t rn42_getc(void)
+  52:rn42/rn42.c   **** {
+  53:rn42/rn42.c   ****     return serial_recv2();
+  54:rn42/rn42.c   **** }
+  55:rn42/rn42.c   **** 
+  56:rn42/rn42.c   **** const char *rn42_gets(uint16_t timeout)
+  57:rn42/rn42.c   **** {
+  58:rn42/rn42.c   ****     static char s[24];
+  59:rn42/rn42.c   ****     uint16_t t = timer_read();
+  60:rn42/rn42.c   ****     uint8_t i = 0;
+  61:rn42/rn42.c   ****     int16_t c;
+  62:rn42/rn42.c   ****     while (i < 23 && timer_elapsed(t) < timeout) {
+  63:rn42/rn42.c   ****         if ((c = rn42_getc()) != -1) {
+  64:rn42/rn42.c   ****             if ((char)c == '\r') continue;
+  65:rn42/rn42.c   ****             if ((char)c == '\n') break;
+  66:rn42/rn42.c   ****             s[i++] = c;
+  67:rn42/rn42.c   ****         }
+  68:rn42/rn42.c   ****     }
+  69:rn42/rn42.c   ****     s[i] = '\0';
+  70:rn42/rn42.c   ****     return s;
+  71:rn42/rn42.c   **** }
+  72:rn42/rn42.c   **** 
+  73:rn42/rn42.c   **** void rn42_putc(uint8_t c)
+  74:rn42/rn42.c   **** {
+  75:rn42/rn42.c   ****     serial_send(c);
+  76:rn42/rn42.c   **** }
+  77:rn42/rn42.c   **** 
+  78:rn42/rn42.c   **** void rn42_puts(char *s)
+  79:rn42/rn42.c   **** {
+  80:rn42/rn42.c   ****     while (*s)
+  81:rn42/rn42.c   **** 	serial_send(*s++);
+  82:rn42/rn42.c   **** }
+  83:rn42/rn42.c   **** 
+  84:rn42/rn42.c   **** bool rn42_autoconnecting(void)
+  85:rn42/rn42.c   **** {
+  86:rn42/rn42.c   ****     // GPIO6 for control connection(high: auto connect, low: disconnect)
+  87:rn42/rn42.c   ****     // Note that this needs config: SM,4(Auto-Connect DTR Mode)
+  88:rn42/rn42.c   ****     return (PORTF & (1<<7) ? true : false);
+  89:rn42/rn42.c   **** }
+  90:rn42/rn42.c   **** 
+  91:rn42/rn42.c   **** void rn42_autoconnect(void)
+  92:rn42/rn42.c   **** {
+  93:rn42/rn42.c   ****     // hi to auto connect
+  94:rn42/rn42.c   ****     DDRF |= (1<<7);
+  95:rn42/rn42.c   ****     PORTF |= (1<<7);
+  96:rn42/rn42.c   **** }
+  97:rn42/rn42.c   **** 
+  98:rn42/rn42.c   **** void rn42_disconnect(void)
+  99:rn42/rn42.c   **** {
+ 100:rn42/rn42.c   ****     // low to disconnect
+ 101:rn42/rn42.c   ****     DDRF |= (1<<7);
+ 102:rn42/rn42.c   ****     PORTF &= ~(1<<7);
+ 103:rn42/rn42.c   **** }
+ 104:rn42/rn42.c   **** 
+ 105:rn42/rn42.c   **** bool rn42_rts(void)
+ 106:rn42/rn42.c   **** {
+ 107:rn42/rn42.c   ****     // low when RN-42 is powered and ready to receive
+ 108:rn42/rn42.c   ****     return PINF&(1<<1);
+ 109:rn42/rn42.c   **** }
+ 110:rn42/rn42.c   **** 
+ 111:rn42/rn42.c   **** void rn42_cts_hi(void)
+ 112:rn42/rn42.c   **** {
+ 113:rn42/rn42.c   ****     // not allow to send
+ 114:rn42/rn42.c   ****     PORTD |= (1<<5);
+ 115:rn42/rn42.c   **** }
+ 116:rn42/rn42.c   **** 
+ 117:rn42/rn42.c   **** void rn42_cts_lo(void)
+ 118:rn42/rn42.c   **** {
+ 119:rn42/rn42.c   ****     // allow to send
+ 120:rn42/rn42.c   ****     PORTD &= ~(1<<5);
+ 121:rn42/rn42.c   **** }
+ 122:rn42/rn42.c   **** 
+ 123:rn42/rn42.c   **** bool rn42_linked(void)
+ 124:rn42/rn42.c   **** {
+ 125:rn42/rn42.c   ****     // RN-42 GPIO2
+ 126:rn42/rn42.c   ****     //   Hi-Z:  Not powered
+ 127:rn42/rn42.c   ****     //   High:  Linked
+ 128:rn42/rn42.c   ****     //   Low:   Connecting
+ 129:rn42/rn42.c   ****     return PINF&(1<<6);
+ 130:rn42/rn42.c   **** }
+ 131:rn42/rn42.c   **** 
+ 132:rn42/rn42.c   **** 
+ 133:rn42/rn42.c   **** static uint8_t leds = 0;
+ 134:rn42/rn42.c   **** static uint8_t keyboard_leds(void) { return leds; }
+  15               		.loc 1 134 36 view -0
+  16               		.cfi_startproc
+  17               	/* prologue: function */
+  18               	/* frame size = 0 */
+  19               	/* stack size = 0 */
+  20               	.L__stack_usage = 0
+  21               		.loc 1 134 38 view .LVU1
+  22               		.loc 1 134 1 is_stmt 0 view .LVU2
+  23 0000 8091 0000 		lds r24,leds
+  24               	/* epilogue start */
+  25 0004 0895      		ret
+  26               		.cfi_endproc
+  27               	.LFE112:
+  29               		.section	.text.send_system,"ax",@progbits
+  31               	send_system:
+  32               	.LVL0:
+  33               	.LFB119:
+ 135:rn42/rn42.c   **** void rn42_set_leds(uint8_t l) { leds = l; }
+ 136:rn42/rn42.c   **** 
+ 137:rn42/rn42.c   **** 
+ 138:rn42/rn42.c   **** void rn42_send_str(const char *str)
+ 139:rn42/rn42.c   **** {
+ 140:rn42/rn42.c   ****     uint8_t c;
+ 141:rn42/rn42.c   ****     while ((c = pgm_read_byte(str++)))
+ 142:rn42/rn42.c   ****         rn42_putc(c);
+ 143:rn42/rn42.c   **** }
+ 144:rn42/rn42.c   **** 
+ 145:rn42/rn42.c   **** const char *rn42_send_command(const char *cmd)
+ 146:rn42/rn42.c   **** {
+ 147:rn42/rn42.c   ****     static const char *s;
+ 148:rn42/rn42.c   ****     rn42_send_str(cmd);
+ 149:rn42/rn42.c   ****     wait_ms(500);
+ 150:rn42/rn42.c   ****     s = rn42_gets(100);
+ 151:rn42/rn42.c   ****     xprintf("%s\r\n", s);
+ 152:rn42/rn42.c   ****     rn42_print_response();
+ 153:rn42/rn42.c   ****     return s;
+ 154:rn42/rn42.c   **** }
+ 155:rn42/rn42.c   **** 
+ 156:rn42/rn42.c   **** void rn42_print_response(void)
+ 157:rn42/rn42.c   **** {
+ 158:rn42/rn42.c   ****     int16_t c;
+ 159:rn42/rn42.c   ****     while ((c = rn42_getc()) != -1) {
+ 160:rn42/rn42.c   ****         xprintf("%c", c);
+ 161:rn42/rn42.c   ****     }
+ 162:rn42/rn42.c   **** }
+ 163:rn42/rn42.c   **** 
+ 164:rn42/rn42.c   **** 
+ 165:rn42/rn42.c   **** static void send_keyboard(report_keyboard_t *report)
+ 166:rn42/rn42.c   **** {
+ 167:rn42/rn42.c   ****     // wake from deep sleep
+ 168:rn42/rn42.c   **** /*
+ 169:rn42/rn42.c   ****     PORTD |= (1<<5);    // high
+ 170:rn42/rn42.c   ****     wait_ms(5);
+ 171:rn42/rn42.c   ****     PORTD &= ~(1<<5);   // low
+ 172:rn42/rn42.c   **** */
+ 173:rn42/rn42.c   **** 
+ 174:rn42/rn42.c   ****     serial_send(0xFD);  // Raw report mode
+ 175:rn42/rn42.c   ****     serial_send(9);     // length
+ 176:rn42/rn42.c   ****     serial_send(1);     // descriptor type
+ 177:rn42/rn42.c   ****     serial_send(report->mods);
+ 178:rn42/rn42.c   ****     serial_send(0x00);
+ 179:rn42/rn42.c   ****     serial_send(report->keys[0]);
+ 180:rn42/rn42.c   ****     serial_send(report->keys[1]);
+ 181:rn42/rn42.c   ****     serial_send(report->keys[2]);
+ 182:rn42/rn42.c   ****     serial_send(report->keys[3]);
+ 183:rn42/rn42.c   ****     serial_send(report->keys[4]);
+ 184:rn42/rn42.c   ****     serial_send(report->keys[5]);
+ 185:rn42/rn42.c   **** }
+ 186:rn42/rn42.c   **** 
+ 187:rn42/rn42.c   **** static void send_mouse(report_mouse_t *report)
+ 188:rn42/rn42.c   **** {
+ 189:rn42/rn42.c   ****     // wake from deep sleep
+ 190:rn42/rn42.c   **** /*
+ 191:rn42/rn42.c   ****     PORTD |= (1<<5);    // high
+ 192:rn42/rn42.c   ****     wait_ms(5);
+ 193:rn42/rn42.c   ****     PORTD &= ~(1<<5);   // low
+ 194:rn42/rn42.c   **** */
+ 195:rn42/rn42.c   **** 
+ 196:rn42/rn42.c   ****     serial_send(0xFD);  // Raw report mode
+ 197:rn42/rn42.c   ****     serial_send(5);     // length
+ 198:rn42/rn42.c   ****     serial_send(2);     // descriptor type
+ 199:rn42/rn42.c   ****     serial_send(report->buttons);
+ 200:rn42/rn42.c   ****     serial_send(report->x);
+ 201:rn42/rn42.c   ****     serial_send(report->y);
+ 202:rn42/rn42.c   ****     serial_send(report->v);
+ 203:rn42/rn42.c   **** }
+ 204:rn42/rn42.c   **** 
+ 205:rn42/rn42.c   **** static void send_system(uint16_t data)
+ 206:rn42/rn42.c   **** {
+  34               		.loc 1 206 1 is_stmt 1 view -0
+  35               		.cfi_startproc
+  36               	/* prologue: function */
+  37               	/* frame size = 0 */
+  38               	/* stack size = 0 */
+  39               	.L__stack_usage = 0
+ 207:rn42/rn42.c   ****     // Table 5-6 of RN-BT-DATA-UB
+ 208:rn42/rn42.c   ****     // 81,82,83 scan codes can be used?
+ 209:rn42/rn42.c   **** }
+  40               		.loc 1 209 1 view .LVU4
+  41               	/* epilogue start */
+  42 0000 0895      		ret
+  43               		.cfi_endproc
+  44               	.LFE119:
+  46               		.section	.text.config_send_keyboard,"ax",@progbits
+  48               	config_send_keyboard:
+  49               	.LVL1:
+  50               	.LFB123:
+ 210:rn42/rn42.c   **** 
+ 211:rn42/rn42.c   **** 
+ 212:rn42/rn42.c   **** static uint16_t usage2bits(uint16_t usage)
+ 213:rn42/rn42.c   **** {
+ 214:rn42/rn42.c   ****     switch (usage) {
+ 215:rn42/rn42.c   ****         case APPCONTROL_HOME:         return 0x01;
+ 216:rn42/rn42.c   ****         case APPLAUNCH_EMAIL:         return 0x02;
+ 217:rn42/rn42.c   ****         case APPCONTROL_SEARCH:       return 0x04;
+ 218:rn42/rn42.c   ****         //case AL_KBD_LAYOUT:         return 0x08;  // Apple virtual keybaord toggle
+ 219:rn42/rn42.c   ****         case AUDIO_VOL_UP:            return 0x10;
+ 220:rn42/rn42.c   ****         case AUDIO_VOL_DOWN:          return 0x20;
+ 221:rn42/rn42.c   ****         case AUDIO_MUTE:              return 0x40;
+ 222:rn42/rn42.c   ****         case TRANSPORT_PLAY_PAUSE:    return 0x80;
+ 223:rn42/rn42.c   ****         case TRANSPORT_NEXT_TRACK:    return 0x100;
+ 224:rn42/rn42.c   ****         case TRANSPORT_PREV_TRACK:    return 0x200;
+ 225:rn42/rn42.c   ****         case TRANSPORT_STOP:          return 0x400;
+ 226:rn42/rn42.c   ****         case TRANSPORT_STOP_EJECT:    return 0x800;
+ 227:rn42/rn42.c   ****         case TRANSPORT_FAST_FORWARD:  return 0x1000;
+ 228:rn42/rn42.c   ****         case TRANSPORT_REWIND:        return 0x2000;
+ 229:rn42/rn42.c   ****         //case return 0x4000;   // Stop/eject
+ 230:rn42/rn42.c   ****         //case return 0x8000;   // Internet browser
+ 231:rn42/rn42.c   ****     };
+ 232:rn42/rn42.c   ****     return 0;
+ 233:rn42/rn42.c   **** }
+ 234:rn42/rn42.c   **** 
+ 235:rn42/rn42.c   **** static void send_consumer(uint16_t data)
+ 236:rn42/rn42.c   **** {
+ 237:rn42/rn42.c   ****     uint16_t bits = usage2bits(data);
+ 238:rn42/rn42.c   ****     serial_send(0xFD);  // Raw report mode
+ 239:rn42/rn42.c   ****     serial_send(3);     // length
+ 240:rn42/rn42.c   ****     serial_send(3);     // descriptor type
+ 241:rn42/rn42.c   ****     serial_send(bits&0xFF);
+ 242:rn42/rn42.c   ****     serial_send((bits>>8)&0xFF);
+ 243:rn42/rn42.c   **** }
+ 244:rn42/rn42.c   **** 
+ 245:rn42/rn42.c   **** 
+ 246:rn42/rn42.c   **** /* Null driver for config_mode */
+ 247:rn42/rn42.c   **** static uint8_t config_keyboard_leds(void);
+ 248:rn42/rn42.c   **** static void config_send_keyboard(report_keyboard_t *report);
+ 249:rn42/rn42.c   **** static void config_send_mouse(report_mouse_t *report);
+ 250:rn42/rn42.c   **** static void config_send_system(uint16_t data);
+ 251:rn42/rn42.c   **** static void config_send_consumer(uint16_t data);
+ 252:rn42/rn42.c   **** 
+ 253:rn42/rn42.c   **** host_driver_t rn42_config_driver = {
+ 254:rn42/rn42.c   ****     config_keyboard_leds,
+ 255:rn42/rn42.c   ****     config_send_keyboard,
+ 256:rn42/rn42.c   ****     config_send_mouse,
+ 257:rn42/rn42.c   ****     config_send_system,
+ 258:rn42/rn42.c   ****     config_send_consumer
+ 259:rn42/rn42.c   **** };
+ 260:rn42/rn42.c   **** 
+ 261:rn42/rn42.c   **** static uint8_t config_keyboard_leds(void) { return leds; }
+ 262:rn42/rn42.c   **** static void config_send_keyboard(report_keyboard_t *report) {}
+  51               		.loc 1 262 61 view -0
+  52               		.cfi_startproc
+  53               	/* prologue: function */
+  54               	/* frame size = 0 */
+  55               	/* stack size = 0 */
+  56               	.L__stack_usage = 0
+  57               		.loc 1 262 62 view .LVU6
+  58               	/* epilogue start */
+  59               		.loc 1 262 1 is_stmt 0 view .LVU7
+  60 0000 0895      		ret
+  61               		.cfi_endproc
+  62               	.LFE123:
+  64               		.section	.text.send_consumer,"ax",@progbits
+  66               	send_consumer:
+  67               	.LVL2:
+  68               	.LFB121:
+ 236:rn42/rn42.c   ****     uint16_t bits = usage2bits(data);
+  69               		.loc 1 236 1 is_stmt 1 view -0
+  70               		.cfi_startproc
+ 236:rn42/rn42.c   ****     uint16_t bits = usage2bits(data);
+  71               		.loc 1 236 1 is_stmt 0 view .LVU9
+  72 0000 CF93      		push r28
+  73               	.LCFI0:
+  74               		.cfi_def_cfa_offset 3
+  75               		.cfi_offset 28, -2
+  76 0002 DF93      		push r29
+  77               	.LCFI1:
+  78               		.cfi_def_cfa_offset 4
+  79               		.cfi_offset 29, -3
+  80               	/* prologue: function */
+  81               	/* frame size = 0 */
+  82               	/* stack size = 2 */
+  83               	.L__stack_usage = 2
+ 237:rn42/rn42.c   ****     serial_send(0xFD);  // Raw report mode
+  84               		.loc 1 237 5 is_stmt 1 view .LVU10
+  85               	.LVL3:
+  86               	.LBB7:
+  87               	.LBI7:
+ 212:rn42/rn42.c   **** {
+  88               		.loc 1 212 17 view .LVU11
+  89               	.LBB8:
+ 214:rn42/rn42.c   ****         case APPCONTROL_HOME:         return 0x01;
+  90               		.loc 1 214 5 view .LVU12
+  91 0004 8D3C      		cpi r24,-51
+  92 0006 9105      		cpc r25,__zero_reg__
+  93 0008 01F4      		brne .+2
+  94 000a 00C0      		rjmp .L9
+  95 000c 00F4      		brsh .L6
+ 232:rn42/rn42.c   **** }
+  96               		.loc 1 232 12 is_stmt 0 view .LVU13
+  97 000e D0E0      		ldi r29,0
+ 223:rn42/rn42.c   ****         case TRANSPORT_PREV_TRACK:    return 0x200;
+  98               		.loc 1 223 46 view .LVU14
+  99 0010 C1E0      		ldi r28,lo8(1)
+ 100 0012 853B      		cpi r24,-75
+ 101 0014 9105      		cpc r25,__zero_reg__
+ 102 0016 01F0      		breq .L5
+ 103 0018 00F4      		brsh .L7
+ 227:rn42/rn42.c   ****         case TRANSPORT_REWIND:        return 0x2000;
+ 104               		.loc 1 227 46 view .LVU15
+ 105 001a C0E1      		ldi r28,lo8(16)
+ 106 001c 833B      		cpi r24,-77
+ 107 001e 9105      		cpc r25,__zero_reg__
+ 108 0020 01F0      		breq .L5
+ 228:rn42/rn42.c   ****         //case return 0x4000;   // Stop/eject
+ 109               		.loc 1 228 46 view .LVU16
+ 110 0022 C0E2      		ldi r28,lo8(32)
+ 111 0024 843B      		cpi r24,-76
+ 112 0026 9105      		cpc r25,__zero_reg__
+ 113 0028 01F0      		breq .L5
+ 114               	.L22:
+ 216:rn42/rn42.c   ****         case APPCONTROL_SEARCH:       return 0x04;
+ 115               		.loc 1 216 46 view .LVU17
+ 116 002a C0E0      		ldi r28,0
+ 117 002c 00C0      		rjmp .L5
+ 118               	.L7:
+ 225:rn42/rn42.c   ****         case TRANSPORT_STOP_EJECT:    return 0x800;
+ 119               		.loc 1 225 46 view .LVU18
+ 120 002e C4E0      		ldi r28,lo8(4)
+ 121 0030 873B      		cpi r24,-73
+ 122 0032 9105      		cpc r25,__zero_reg__
+ 123 0034 01F0      		breq .L5
+ 224:rn42/rn42.c   ****         case TRANSPORT_STOP:          return 0x400;
+ 124               		.loc 1 224 46 view .LVU19
+ 125 0036 C2E0      		ldi r28,lo8(2)
+ 126 0038 873B      		cpi r24,-73
+ 127 003a 9105      		cpc r25,__zero_reg__
+ 128 003c 00F0      		brlo .L5
+ 226:rn42/rn42.c   ****         case TRANSPORT_FAST_FORWARD:  return 0x1000;
+ 129               		.loc 1 226 46 view .LVU20
+ 130 003e C8E0      		ldi r28,lo8(8)
+ 131 0040 8C3C      		cpi r24,-52
+ 132 0042 9105      		cpc r25,__zero_reg__
+ 133 0044 01F4      		brne .L22
+ 134               	.L5:
+ 135               	.LVL4:
+ 226:rn42/rn42.c   ****         case TRANSPORT_FAST_FORWARD:  return 0x1000;
+ 136               		.loc 1 226 46 view .LVU21
+ 137               	.LBE8:
+ 138               	.LBE7:
+ 238:rn42/rn42.c   ****     serial_send(3);     // length
+ 139               		.loc 1 238 5 is_stmt 1 view .LVU22
+ 140 0046 8DEF      		ldi r24,lo8(-3)
+ 141               	.LVL5:
+ 238:rn42/rn42.c   ****     serial_send(3);     // length
+ 142               		.loc 1 238 5 is_stmt 0 view .LVU23
+ 143 0048 0E94 0000 		call serial_send
+ 144               	.LVL6:
+ 239:rn42/rn42.c   ****     serial_send(3);     // descriptor type
+ 145               		.loc 1 239 5 is_stmt 1 view .LVU24
+ 146 004c 83E0      		ldi r24,lo8(3)
+ 147 004e 0E94 0000 		call serial_send
+ 148               	.LVL7:
+ 240:rn42/rn42.c   ****     serial_send(bits&0xFF);
+ 149               		.loc 1 240 5 view .LVU25
+ 150 0052 83E0      		ldi r24,lo8(3)
+ 151 0054 0E94 0000 		call serial_send
+ 152               	.LVL8:
+ 241:rn42/rn42.c   ****     serial_send((bits>>8)&0xFF);
+ 153               		.loc 1 241 5 view .LVU26
+ 154 0058 8D2F      		mov r24,r29
+ 155 005a 0E94 0000 		call serial_send
+ 156               	.LVL9:
+ 242:rn42/rn42.c   **** }
+ 157               		.loc 1 242 5 view .LVU27
+ 158 005e 8C2F      		mov r24,r28
+ 159               	/* epilogue start */
+ 243:rn42/rn42.c   **** 
+ 160               		.loc 1 243 1 is_stmt 0 view .LVU28
+ 161 0060 DF91      		pop r29
+ 162               	.LVL10:
+ 243:rn42/rn42.c   **** 
+ 163               		.loc 1 243 1 view .LVU29
+ 164 0062 CF91      		pop r28
+ 242:rn42/rn42.c   **** }
+ 165               		.loc 1 242 5 view .LVU30
+ 166 0064 0C94 0000 		jmp serial_send
+ 167               	.LVL11:
+ 168               	.L6:
+ 169               	.LBB10:
+ 170               	.LBB9:
+ 220:rn42/rn42.c   ****         case AUDIO_MUTE:              return 0x40;
+ 171               		.loc 1 220 46 view .LVU31
+ 172 0068 D0E2      		ldi r29,lo8(32)
+ 173 006a 8A3E      		cpi r24,-22
+ 174 006c 9105      		cpc r25,__zero_reg__
+ 175 006e 01F0      		breq .L22
+ 176 0070 00F4      		brsh .L8
+ 221:rn42/rn42.c   ****         case TRANSPORT_PLAY_PAUSE:    return 0x80;
+ 177               		.loc 1 221 46 view .LVU32
+ 178 0072 D0E4      		ldi r29,lo8(64)
+ 179 0074 823E      		cpi r24,-30
+ 180 0076 9105      		cpc r25,__zero_reg__
+ 181 0078 01F0      		breq .L22
+ 219:rn42/rn42.c   ****         case AUDIO_VOL_DOWN:          return 0x20;
+ 182               		.loc 1 219 46 view .LVU33
+ 183 007a D0E1      		ldi r29,lo8(16)
+ 184 007c 893E      		cpi r24,-23
+ 185 007e 9105      		cpc r25,__zero_reg__
+ 186 0080 01F0      		breq .L22
+ 187               	.L23:
+ 232:rn42/rn42.c   **** }
+ 188               		.loc 1 232 12 view .LVU34
+ 189 0082 D0E0      		ldi r29,0
+ 190 0084 00C0      		rjmp .L22
+ 191               	.L8:
+ 217:rn42/rn42.c   ****         //case AL_KBD_LAYOUT:         return 0x08;  // Apple virtual keybaord toggle
+ 192               		.loc 1 217 46 view .LVU35
+ 193 0086 D4E0      		ldi r29,lo8(4)
+ 194 0088 8132      		cpi r24,33
+ 195 008a 22E0      		ldi r18,2
+ 196 008c 9207      		cpc r25,r18
+ 197 008e 01F0      		breq .L22
+ 215:rn42/rn42.c   ****         case APPLAUNCH_EMAIL:         return 0x02;
+ 198               		.loc 1 215 46 view .LVU36
+ 199 0090 D1E0      		ldi r29,lo8(1)
+ 200 0092 8332      		cpi r24,35
+ 201 0094 22E0      		ldi r18,2
+ 202 0096 9207      		cpc r25,r18
+ 203 0098 01F0      		breq .L22
+ 216:rn42/rn42.c   ****         case APPCONTROL_SEARCH:       return 0x04;
+ 204               		.loc 1 216 46 view .LVU37
+ 205 009a D2E0      		ldi r29,lo8(2)
+ 206 009c 8A38      		cpi r24,-118
+ 207 009e 9140      		sbci r25,1
+ 208 00a0 01F4      		brne .L23
+ 209 00a2 00C0      		rjmp .L22
+ 210               	.L9:
+ 222:rn42/rn42.c   ****         case TRANSPORT_NEXT_TRACK:    return 0x100;
+ 211               		.loc 1 222 46 view .LVU38
+ 212 00a4 D0E8      		ldi r29,lo8(-128)
+ 213 00a6 00C0      		rjmp .L22
+ 214               	.LBE9:
+ 215               	.LBE10:
+ 216               		.cfi_endproc
+ 217               	.LFE121:
+ 219               		.section	.text.send_mouse,"ax",@progbits
+ 221               	send_mouse:
+ 222               	.LVL12:
+ 223               	.LFB118:
+ 188:rn42/rn42.c   ****     // wake from deep sleep
+ 224               		.loc 1 188 1 is_stmt 1 view -0
+ 225               		.cfi_startproc
+ 188:rn42/rn42.c   ****     // wake from deep sleep
+ 226               		.loc 1 188 1 is_stmt 0 view .LVU40
+ 227 0000 CF93      		push r28
+ 228               	.LCFI2:
+ 229               		.cfi_def_cfa_offset 3
+ 230               		.cfi_offset 28, -2
+ 231 0002 DF93      		push r29
+ 232               	.LCFI3:
+ 233               		.cfi_def_cfa_offset 4
+ 234               		.cfi_offset 29, -3
+ 235               	/* prologue: function */
+ 236               	/* frame size = 0 */
+ 237               	/* stack size = 2 */
+ 238               	.L__stack_usage = 2
+ 239 0004 EC01      		movw r28,r24
+ 196:rn42/rn42.c   ****     serial_send(5);     // length
+ 240               		.loc 1 196 5 is_stmt 1 view .LVU41
+ 241 0006 8DEF      		ldi r24,lo8(-3)
+ 242               	.LVL13:
+ 196:rn42/rn42.c   ****     serial_send(5);     // length
+ 243               		.loc 1 196 5 is_stmt 0 view .LVU42
+ 244 0008 0E94 0000 		call serial_send
+ 245               	.LVL14:
+ 197:rn42/rn42.c   ****     serial_send(2);     // descriptor type
+ 246               		.loc 1 197 5 is_stmt 1 view .LVU43
+ 247 000c 85E0      		ldi r24,lo8(5)
+ 248 000e 0E94 0000 		call serial_send
+ 249               	.LVL15:
+ 198:rn42/rn42.c   ****     serial_send(report->buttons);
+ 250               		.loc 1 198 5 view .LVU44
+ 251 0012 82E0      		ldi r24,lo8(2)
+ 252 0014 0E94 0000 		call serial_send
+ 253               	.LVL16:
+ 199:rn42/rn42.c   ****     serial_send(report->x);
+ 254               		.loc 1 199 5 view .LVU45
+ 255 0018 8881      		ld r24,Y
+ 256 001a 0E94 0000 		call serial_send
+ 257               	.LVL17:
+ 200:rn42/rn42.c   ****     serial_send(report->y);
+ 258               		.loc 1 200 5 view .LVU46
+ 259 001e 8981      		ldd r24,Y+1
+ 260 0020 0E94 0000 		call serial_send
+ 261               	.LVL18:
+ 201:rn42/rn42.c   ****     serial_send(report->v);
+ 262               		.loc 1 201 5 view .LVU47
+ 263 0024 8A81      		ldd r24,Y+2
+ 264 0026 0E94 0000 		call serial_send
+ 265               	.LVL19:
+ 202:rn42/rn42.c   **** }
+ 266               		.loc 1 202 5 view .LVU48
+ 267 002a 8B81      		ldd r24,Y+3
+ 268               	/* epilogue start */
+ 203:rn42/rn42.c   **** 
+ 269               		.loc 1 203 1 is_stmt 0 view .LVU49
+ 270 002c DF91      		pop r29
+ 271 002e CF91      		pop r28
+ 272               	.LVL20:
+ 202:rn42/rn42.c   **** }
+ 273               		.loc 1 202 5 view .LVU50
+ 274 0030 0C94 0000 		jmp serial_send
+ 275               	.LVL21:
+ 276               		.cfi_endproc
+ 277               	.LFE118:
+ 279               		.section	.text.send_keyboard,"ax",@progbits
+ 281               	send_keyboard:
+ 282               	.LVL22:
+ 283               	.LFB117:
+ 166:rn42/rn42.c   ****     // wake from deep sleep
+ 284               		.loc 1 166 1 is_stmt 1 view -0
+ 285               		.cfi_startproc
+ 166:rn42/rn42.c   ****     // wake from deep sleep
+ 286               		.loc 1 166 1 is_stmt 0 view .LVU52
+ 287 0000 CF93      		push r28
+ 288               	.LCFI4:
+ 289               		.cfi_def_cfa_offset 3
+ 290               		.cfi_offset 28, -2
+ 291 0002 DF93      		push r29
+ 292               	.LCFI5:
+ 293               		.cfi_def_cfa_offset 4
+ 294               		.cfi_offset 29, -3
+ 295               	/* prologue: function */
+ 296               	/* frame size = 0 */
+ 297               	/* stack size = 2 */
+ 298               	.L__stack_usage = 2
+ 299 0004 EC01      		movw r28,r24
+ 174:rn42/rn42.c   ****     serial_send(9);     // length
+ 300               		.loc 1 174 5 is_stmt 1 view .LVU53
+ 301 0006 8DEF      		ldi r24,lo8(-3)
+ 302               	.LVL23:
+ 174:rn42/rn42.c   ****     serial_send(9);     // length
+ 303               		.loc 1 174 5 is_stmt 0 view .LVU54
+ 304 0008 0E94 0000 		call serial_send
+ 305               	.LVL24:
+ 175:rn42/rn42.c   ****     serial_send(1);     // descriptor type
+ 306               		.loc 1 175 5 is_stmt 1 view .LVU55
+ 307 000c 89E0      		ldi r24,lo8(9)
+ 308 000e 0E94 0000 		call serial_send
+ 309               	.LVL25:
+ 176:rn42/rn42.c   ****     serial_send(report->mods);
+ 310               		.loc 1 176 5 view .LVU56
+ 311 0012 81E0      		ldi r24,lo8(1)
+ 312 0014 0E94 0000 		call serial_send
+ 313               	.LVL26:
+ 177:rn42/rn42.c   ****     serial_send(0x00);
+ 314               		.loc 1 177 5 view .LVU57
+ 315 0018 8881      		ld r24,Y
+ 316 001a 0E94 0000 		call serial_send
+ 317               	.LVL27:
+ 178:rn42/rn42.c   ****     serial_send(report->keys[0]);
+ 318               		.loc 1 178 5 view .LVU58
+ 319 001e 80E0      		ldi r24,0
+ 320 0020 0E94 0000 		call serial_send
+ 321               	.LVL28:
+ 179:rn42/rn42.c   ****     serial_send(report->keys[1]);
+ 322               		.loc 1 179 5 view .LVU59
+ 323 0024 8A81      		ldd r24,Y+2
+ 324 0026 0E94 0000 		call serial_send
+ 325               	.LVL29:
+ 180:rn42/rn42.c   ****     serial_send(report->keys[2]);
+ 326               		.loc 1 180 5 view .LVU60
+ 327 002a 8B81      		ldd r24,Y+3
+ 328 002c 0E94 0000 		call serial_send
+ 329               	.LVL30:
+ 181:rn42/rn42.c   ****     serial_send(report->keys[3]);
+ 330               		.loc 1 181 5 view .LVU61
+ 331 0030 8C81      		ldd r24,Y+4
+ 332 0032 0E94 0000 		call serial_send
+ 333               	.LVL31:
+ 182:rn42/rn42.c   ****     serial_send(report->keys[4]);
+ 334               		.loc 1 182 5 view .LVU62
+ 335 0036 8D81      		ldd r24,Y+5
+ 336 0038 0E94 0000 		call serial_send
+ 337               	.LVL32:
+ 183:rn42/rn42.c   ****     serial_send(report->keys[5]);
+ 338               		.loc 1 183 5 view .LVU63
+ 339 003c 8E81      		ldd r24,Y+6
+ 340 003e 0E94 0000 		call serial_send
+ 341               	.LVL33:
+ 184:rn42/rn42.c   **** }
+ 342               		.loc 1 184 5 view .LVU64
+ 343 0042 8F81      		ldd r24,Y+7
+ 344               	/* epilogue start */
+ 185:rn42/rn42.c   **** 
+ 345               		.loc 1 185 1 is_stmt 0 view .LVU65
+ 346 0044 DF91      		pop r29
+ 347 0046 CF91      		pop r28
+ 348               	.LVL34:
+ 184:rn42/rn42.c   **** }
+ 349               		.loc 1 184 5 view .LVU66
+ 350 0048 0C94 0000 		jmp serial_send
+ 351               	.LVL35:
+ 352               		.cfi_endproc
+ 353               	.LFE117:
+ 355               		.section	.text.config_send_mouse,"ax",@progbits
+ 357               	config_send_mouse:
+ 358               	.LFB134:
+ 359               		.cfi_startproc
+ 360               	/* prologue: function */
+ 361               	/* frame size = 0 */
+ 362               	/* stack size = 0 */
+ 363               	.L__stack_usage = 0
+ 364               	/* epilogue start */
+ 365 0000 0895      		ret
+ 366               		.cfi_endproc
+ 367               	.LFE134:
+ 369               		.section	.text.config_send_consumer,"ax",@progbits
+ 371               	config_send_consumer:
+ 372               	.LFB132:
+ 373               		.cfi_startproc
+ 374               	/* prologue: function */
+ 375               	/* frame size = 0 */
+ 376               	/* stack size = 0 */
+ 377               	.L__stack_usage = 0
+ 378               	/* epilogue start */
+ 379 0000 0895      		ret
+ 380               		.cfi_endproc
+ 381               	.LFE132:
+ 383               		.section	.text.config_send_system,"ax",@progbits
+ 385               	config_send_system:
+ 386               	.LFB130:
+ 387               		.cfi_startproc
+ 388               	/* prologue: function */
+ 389               	/* frame size = 0 */
+ 390               	/* stack size = 0 */
+ 391               	.L__stack_usage = 0
+ 392               	/* epilogue start */
+ 393 0000 0895      		ret
+ 394               		.cfi_endproc
+ 395               	.LFE130:
+ 397               		.section	.text.config_keyboard_leds,"ax",@progbits
+ 399               	config_keyboard_leds:
+ 400               	.LFB128:
+ 401               		.cfi_startproc
+ 402               	/* prologue: function */
+ 403               	/* frame size = 0 */
+ 404               	/* stack size = 0 */
+ 405               	.L__stack_usage = 0
+ 406 0000 8091 0000 		lds r24,leds
+ 407               	/* epilogue start */
+ 408 0004 0895      		ret
+ 409               		.cfi_endproc
+ 410               	.LFE128:
+ 412               		.section	.text.rn42_getc,"ax",@progbits
+ 413               	.global	rn42_getc
+ 415               	rn42_getc:
+ 416               	.LFB101:
+  52:rn42/rn42.c   ****     return serial_recv2();
+ 417               		.loc 1 52 1 is_stmt 1 view -0
+ 418               		.cfi_startproc
+ 419               	/* prologue: function */
+ 420               	/* frame size = 0 */
+ 421               	/* stack size = 0 */
+ 422               	.L__stack_usage = 0
+  53:rn42/rn42.c   **** }
+ 423               		.loc 1 53 5 view .LVU68
+  53:rn42/rn42.c   **** }
+ 424               		.loc 1 53 12 is_stmt 0 view .LVU69
+ 425 0000 0C94 0000 		jmp serial_recv2
+ 426               	.LVL36:
+ 427               		.cfi_endproc
+ 428               	.LFE101:
+ 430               		.section	.text.rn42_gets,"ax",@progbits
+ 431               	.global	rn42_gets
+ 433               	rn42_gets:
+ 434               	.LVL37:
+ 435               	.LFB102:
+  57:rn42/rn42.c   ****     static char s[24];
+ 436               		.loc 1 57 1 is_stmt 1 view -0
+ 437               		.cfi_startproc
+  57:rn42/rn42.c   ****     static char s[24];
+ 438               		.loc 1 57 1 is_stmt 0 view .LVU71
+ 439 0000 EF92      		push r14
+ 440               	.LCFI6:
+ 441               		.cfi_def_cfa_offset 3
+ 442               		.cfi_offset 14, -2
+ 443 0002 FF92      		push r15
+ 444               	.LCFI7:
+ 445               		.cfi_def_cfa_offset 4
+ 446               		.cfi_offset 15, -3
+ 447 0004 0F93      		push r16
+ 448               	.LCFI8:
+ 449               		.cfi_def_cfa_offset 5
+ 450               		.cfi_offset 16, -4
+ 451 0006 1F93      		push r17
+ 452               	.LCFI9:
+ 453               		.cfi_def_cfa_offset 6
+ 454               		.cfi_offset 17, -5
+ 455 0008 CF93      		push r28
+ 456               	.LCFI10:
+ 457               		.cfi_def_cfa_offset 7
+ 458               		.cfi_offset 28, -6
+ 459               	/* prologue: function */
+ 460               	/* frame size = 0 */
+ 461               	/* stack size = 5 */
+ 462               	.L__stack_usage = 5
+ 463 000a 8C01      		movw r16,r24
+  58:rn42/rn42.c   ****     uint16_t t = timer_read();
+ 464               		.loc 1 58 5 is_stmt 1 view .LVU72
+  59:rn42/rn42.c   ****     uint8_t i = 0;
+ 465               		.loc 1 59 5 view .LVU73
+  59:rn42/rn42.c   ****     uint8_t i = 0;
+ 466               		.loc 1 59 18 is_stmt 0 view .LVU74
+ 467 000c 0E94 0000 		call timer_read
+ 468               	.LVL38:
+  59:rn42/rn42.c   ****     uint8_t i = 0;
+ 469               		.loc 1 59 18 view .LVU75
+ 470 0010 7C01      		movw r14,r24
+ 471               	.LVL39:
+  60:rn42/rn42.c   ****     int16_t c;
+ 472               		.loc 1 60 5 is_stmt 1 view .LVU76
+  61:rn42/rn42.c   ****     while (i < 23 && timer_elapsed(t) < timeout) {
+ 473               		.loc 1 61 5 view .LVU77
+  62:rn42/rn42.c   ****         if ((c = rn42_getc()) != -1) {
+ 474               		.loc 1 62 5 view .LVU78
+  60:rn42/rn42.c   ****     int16_t c;
+ 475               		.loc 1 60 13 is_stmt 0 view .LVU79
+ 476 0012 C0E0      		ldi r28,0
+ 477               	.LVL40:
+ 478               	.L32:
+  62:rn42/rn42.c   ****         if ((c = rn42_getc()) != -1) {
+ 479               		.loc 1 62 22 discriminator 1 view .LVU80
+ 480 0014 C701      		movw r24,r14
+ 481 0016 0E94 0000 		call timer_elapsed
+ 482               	.LVL41:
+  62:rn42/rn42.c   ****         if ((c = rn42_getc()) != -1) {
+ 483               		.loc 1 62 19 discriminator 1 view .LVU81
+ 484 001a 8017      		cp r24,r16
+ 485 001c 9107      		cpc r25,r17
+ 486 001e 00F4      		brsh .L34
+  63:rn42/rn42.c   ****             if ((char)c == '\r') continue;
+ 487               		.loc 1 63 9 is_stmt 1 view .LVU82
+ 488               	.LBB13:
+ 489               	.LBI13:
+  51:rn42/rn42.c   **** {
+ 490               		.loc 1 51 9 view .LVU83
+ 491               	.LBB14:
+  53:rn42/rn42.c   **** }
+ 492               		.loc 1 53 5 view .LVU84
+  53:rn42/rn42.c   **** }
+ 493               		.loc 1 53 12 is_stmt 0 view .LVU85
+ 494 0020 0E94 0000 		call serial_recv2
+ 495               	.LVL42:
+  53:rn42/rn42.c   **** }
+ 496               		.loc 1 53 12 view .LVU86
+ 497               	.LBE14:
+ 498               	.LBE13:
+  63:rn42/rn42.c   ****             if ((char)c == '\r') continue;
+ 499               		.loc 1 63 12 view .LVU87
+ 500 0024 8F3F      		cpi r24,-1
+ 501 0026 9807      		cpc r25,r24
+ 502 0028 01F0      		breq .L33
+  64:rn42/rn42.c   ****             if ((char)c == '\n') break;
+ 503               		.loc 1 64 13 is_stmt 1 view .LVU88
+  64:rn42/rn42.c   ****             if ((char)c == '\n') break;
+ 504               		.loc 1 64 16 is_stmt 0 view .LVU89
+ 505 002a 8D30      		cpi r24,lo8(13)
+ 506 002c 01F0      		breq .L33
+  65:rn42/rn42.c   ****             s[i++] = c;
+ 507               		.loc 1 65 13 is_stmt 1 view .LVU90
+  65:rn42/rn42.c   ****             s[i++] = c;
+ 508               		.loc 1 65 16 is_stmt 0 view .LVU91
+ 509 002e 8A30      		cpi r24,lo8(10)
+ 510 0030 01F0      		breq .L34
+  66:rn42/rn42.c   ****         }
+ 511               		.loc 1 66 13 is_stmt 1 view .LVU92
+ 512               	.LVL43:
+  66:rn42/rn42.c   ****         }
+ 513               		.loc 1 66 20 is_stmt 0 view .LVU93
+ 514 0032 EC2F      		mov r30,r28
+ 515 0034 F0E0      		ldi r31,0
+ 516 0036 E050      		subi r30,lo8(-(s.4622))
+ 517 0038 F040      		sbci r31,hi8(-(s.4622))
+ 518 003a 8083      		st Z,r24
+  66:rn42/rn42.c   ****         }
+ 519               		.loc 1 66 16 view .LVU94
+ 520 003c CF5F      		subi r28,lo8(-(1))
+ 521               	.LVL44:
+ 522               	.L33:
+  62:rn42/rn42.c   ****         if ((c = rn42_getc()) != -1) {
+ 523               		.loc 1 62 11 view .LVU95
+ 524 003e C731      		cpi r28,lo8(23)
+ 525 0040 01F4      		brne .L32
+ 526               	.LVL45:
+ 527               	.L34:
+  69:rn42/rn42.c   ****     return s;
+ 528               		.loc 1 69 5 is_stmt 1 view .LVU96
+  69:rn42/rn42.c   ****     return s;
+ 529               		.loc 1 69 6 is_stmt 0 view .LVU97
+ 530 0042 EC2F      		mov r30,r28
+ 531 0044 F0E0      		ldi r31,0
+  69:rn42/rn42.c   ****     return s;
+ 532               		.loc 1 69 10 view .LVU98
+ 533 0046 E050      		subi r30,lo8(-(s.4622))
+ 534 0048 F040      		sbci r31,hi8(-(s.4622))
+ 535 004a 1082      		st Z,__zero_reg__
+  70:rn42/rn42.c   **** }
+ 536               		.loc 1 70 5 is_stmt 1 view .LVU99
+  71:rn42/rn42.c   **** 
+ 537               		.loc 1 71 1 is_stmt 0 view .LVU100
+ 538 004c 80E0      		ldi r24,lo8(s.4622)
+ 539 004e 90E0      		ldi r25,hi8(s.4622)
+ 540               	/* epilogue start */
+ 541 0050 CF91      		pop r28
+ 542               	.LVL46:
+  71:rn42/rn42.c   **** 
+ 543               		.loc 1 71 1 view .LVU101
+ 544 0052 1F91      		pop r17
+ 545 0054 0F91      		pop r16
+ 546               	.LVL47:
+  71:rn42/rn42.c   **** 
+ 547               		.loc 1 71 1 view .LVU102
+ 548 0056 FF90      		pop r15
+ 549 0058 EF90      		pop r14
+ 550               	.LVL48:
+  71:rn42/rn42.c   **** 
+ 551               		.loc 1 71 1 view .LVU103
+ 552 005a 0895      		ret
+ 553               		.cfi_endproc
+ 554               	.LFE102:
+ 556               		.section	.text.rn42_putc,"ax",@progbits
+ 557               	.global	rn42_putc
+ 559               	rn42_putc:
+ 560               	.LVL49:
+ 561               	.LFB103:
+  74:rn42/rn42.c   ****     serial_send(c);
+ 562               		.loc 1 74 1 is_stmt 1 view -0
+ 563               		.cfi_startproc
+ 564               	/* prologue: function */
+ 565               	/* frame size = 0 */
+ 566               	/* stack size = 0 */
+ 567               	.L__stack_usage = 0
+  75:rn42/rn42.c   **** }
+ 568               		.loc 1 75 5 view .LVU105
+ 569 0000 0C94 0000 		jmp serial_send
+ 570               	.LVL50:
+  75:rn42/rn42.c   **** }
+ 571               		.loc 1 75 5 is_stmt 0 view .LVU106
+ 572               		.cfi_endproc
+ 573               	.LFE103:
+ 575               		.section	.text.rn42_puts,"ax",@progbits
+ 576               	.global	rn42_puts
+ 578               	rn42_puts:
+ 579               	.LVL51:
+ 580               	.LFB104:
+  79:rn42/rn42.c   ****     while (*s)
+ 581               		.loc 1 79 1 is_stmt 1 view -0
+ 582               		.cfi_startproc
+  79:rn42/rn42.c   ****     while (*s)
+ 583               		.loc 1 79 1 is_stmt 0 view .LVU108
+ 584 0000 CF93      		push r28
+ 585               	.LCFI11:
+ 586               		.cfi_def_cfa_offset 3
+ 587               		.cfi_offset 28, -2
+ 588 0002 DF93      		push r29
+ 589               	.LCFI12:
+ 590               		.cfi_def_cfa_offset 4
+ 591               		.cfi_offset 29, -3
+ 592               	/* prologue: function */
+ 593               	/* frame size = 0 */
+ 594               	/* stack size = 2 */
+ 595               	.L__stack_usage = 2
+ 596 0004 EC01      		movw r28,r24
+  80:rn42/rn42.c   **** 	serial_send(*s++);
+ 597               		.loc 1 80 5 is_stmt 1 view .LVU109
+ 598               	.LVL52:
+ 599               	.L50:
+  80:rn42/rn42.c   **** 	serial_send(*s++);
+ 600               		.loc 1 80 12 is_stmt 0 view .LVU110
+ 601 0006 8991      		ld r24,Y+
+ 602               	.LVL53:
+  80:rn42/rn42.c   **** 	serial_send(*s++);
+ 603               		.loc 1 80 11 view .LVU111
+ 604 0008 8111      		cpse r24,__zero_reg__
+ 605 000a 00C0      		rjmp .L51
+ 606               	/* epilogue start */
+  82:rn42/rn42.c   **** 
+ 607               		.loc 1 82 1 view .LVU112
+ 608 000c DF91      		pop r29
+ 609 000e CF91      		pop r28
+ 610               	.LVL54:
+  82:rn42/rn42.c   **** 
+ 611               		.loc 1 82 1 view .LVU113
+ 612 0010 0895      		ret
+ 613               	.LVL55:
+ 614               	.L51:
+  81:rn42/rn42.c   **** }
+ 615               		.loc 1 81 2 is_stmt 1 view .LVU114
+  81:rn42/rn42.c   **** }
+ 616               		.loc 1 81 2 is_stmt 0 view .LVU115
+ 617 0012 0E94 0000 		call serial_send
+ 618               	.LVL56:
+ 619 0016 00C0      		rjmp .L50
+ 620               		.cfi_endproc
+ 621               	.LFE104:
+ 623               		.section	.text.rn42_autoconnecting,"ax",@progbits
+ 624               	.global	rn42_autoconnecting
+ 626               	rn42_autoconnecting:
+ 627               	.LFB105:
+  85:rn42/rn42.c   ****     // GPIO6 for control connection(high: auto connect, low: disconnect)
+ 628               		.loc 1 85 1 is_stmt 1 view -0
+ 629               		.cfi_startproc
+ 630               	/* prologue: function */
+ 631               	/* frame size = 0 */
+ 632               	/* stack size = 0 */
+ 633               	.L__stack_usage = 0
+  88:rn42/rn42.c   **** }
+ 634               		.loc 1 88 5 view .LVU117
+  88:rn42/rn42.c   **** }
+ 635               		.loc 1 88 13 is_stmt 0 view .LVU118
+ 636 0000 81B3      		in r24,0x11
+  89:rn42/rn42.c   **** 
+ 637               		.loc 1 89 1 view .LVU119
+ 638 0002 881F      		rol r24
+ 639 0004 8827      		clr r24
+ 640 0006 881F      		rol r24
+ 641               	/* epilogue start */
+ 642 0008 0895      		ret
+ 643               		.cfi_endproc
+ 644               	.LFE105:
+ 646               		.section	.text.rn42_autoconnect,"ax",@progbits
+ 647               	.global	rn42_autoconnect
+ 649               	rn42_autoconnect:
+ 650               	.LFB106:
+  92:rn42/rn42.c   ****     // hi to auto connect
+ 651               		.loc 1 92 1 is_stmt 1 view -0
+ 652               		.cfi_startproc
+ 653               	/* prologue: function */
+ 654               	/* frame size = 0 */
+ 655               	/* stack size = 0 */
+ 656               	.L__stack_usage = 0
+  94:rn42/rn42.c   ****     PORTF |= (1<<7);
+ 657               		.loc 1 94 5 view .LVU121
+  94:rn42/rn42.c   ****     PORTF |= (1<<7);
+ 658               		.loc 1 94 10 is_stmt 0 view .LVU122
+ 659 0000 879A      		sbi 0x10,7
+  95:rn42/rn42.c   **** }
+ 660               		.loc 1 95 5 is_stmt 1 view .LVU123
+  95:rn42/rn42.c   **** }
+ 661               		.loc 1 95 11 is_stmt 0 view .LVU124
+ 662 0002 8F9A      		sbi 0x11,7
+ 663               	/* epilogue start */
+  96:rn42/rn42.c   **** 
+ 664               		.loc 1 96 1 view .LVU125
+ 665 0004 0895      		ret
+ 666               		.cfi_endproc
+ 667               	.LFE106:
+ 669               		.section	.text.rn42_init,"ax",@progbits
+ 670               	.global	rn42_init
+ 672               	rn42_init:
+ 673               	.LFB100:
+  28:rn42/rn42.c   ****     // JTAG disable for PORT F. write JTD bit twice within four cycles.
+ 674               		.loc 1 28 1 is_stmt 1 view -0
+ 675               		.cfi_startproc
+ 676               	/* prologue: function */
+ 677               	/* frame size = 0 */
+ 678               	/* stack size = 0 */
+ 679               	.L__stack_usage = 0
+  30:rn42/rn42.c   ****     MCUCR |= (1<<JTD);
+ 680               		.loc 1 30 5 view .LVU127
+  30:rn42/rn42.c   ****     MCUCR |= (1<<JTD);
+ 681               		.loc 1 30 11 is_stmt 0 view .LVU128
+ 682 0000 85B7      		in r24,0x35
+ 683 0002 8068      		ori r24,lo8(-128)
+ 684 0004 85BF      		out 0x35,r24
+  31:rn42/rn42.c   **** 
+ 685               		.loc 1 31 5 is_stmt 1 view .LVU129
+  31:rn42/rn42.c   **** 
+ 686               		.loc 1 31 11 is_stmt 0 view .LVU130
+ 687 0006 85B7      		in r24,0x35
+ 688 0008 8068      		ori r24,lo8(-128)
+ 689 000a 85BF      		out 0x35,r24
+  34:rn42/rn42.c   **** 
+ 690               		.loc 1 34 5 is_stmt 1 view .LVU131
+ 691 000c 0E94 0000 		call rn42_autoconnect
+ 692               	.LVL57:
+  37:rn42/rn42.c   ****     PORTF |=  (1<<6);
+ 693               		.loc 1 37 5 view .LVU132
+  37:rn42/rn42.c   ****     PORTF |=  (1<<6);
+ 694               		.loc 1 37 11 is_stmt 0 view .LVU133
+ 695 0010 8698      		cbi 0x10,6
+  38:rn42/rn42.c   **** 
+ 696               		.loc 1 38 5 is_stmt 1 view .LVU134
+  38:rn42/rn42.c   **** 
+ 697               		.loc 1 38 11 is_stmt 0 view .LVU135
+ 698 0012 8E9A      		sbi 0x11,6
+  41:rn42/rn42.c   ****     PORTF &= ~(1<<1);
+ 699               		.loc 1 41 5 is_stmt 1 view .LVU136
+  41:rn42/rn42.c   ****     PORTF &= ~(1<<1);
+ 700               		.loc 1 41 10 is_stmt 0 view .LVU137
+ 701 0014 8198      		cbi 0x10,1
+  42:rn42/rn42.c   **** 
+ 702               		.loc 1 42 5 is_stmt 1 view .LVU138
+  42:rn42/rn42.c   **** 
+ 703               		.loc 1 42 11 is_stmt 0 view .LVU139
+ 704 0016 8998      		cbi 0x11,1
+  45:rn42/rn42.c   ****     PORTD &= ~(1<<5);
+ 705               		.loc 1 45 5 is_stmt 1 view .LVU140
+  45:rn42/rn42.c   ****     PORTD &= ~(1<<5);
+ 706               		.loc 1 45 10 is_stmt 0 view .LVU141
+ 707 0018 559A      		sbi 0xa,5
+  46:rn42/rn42.c   **** 
+ 708               		.loc 1 46 5 is_stmt 1 view .LVU142
+  46:rn42/rn42.c   **** 
+ 709               		.loc 1 46 11 is_stmt 0 view .LVU143
+ 710 001a 5D98      		cbi 0xb,5
+  48:rn42/rn42.c   **** }
+ 711               		.loc 1 48 5 is_stmt 1 view .LVU144
+ 712 001c 0C94 0000 		jmp serial_init
+ 713               	.LVL58:
+ 714               		.cfi_endproc
+ 715               	.LFE100:
+ 717               		.section	.text.rn42_disconnect,"ax",@progbits
+ 718               	.global	rn42_disconnect
+ 720               	rn42_disconnect:
+ 721               	.LFB107:
+  99:rn42/rn42.c   ****     // low to disconnect
+ 722               		.loc 1 99 1 view -0
+ 723               		.cfi_startproc
+ 724               	/* prologue: function */
+ 725               	/* frame size = 0 */
+ 726               	/* stack size = 0 */
+ 727               	.L__stack_usage = 0
+ 101:rn42/rn42.c   ****     PORTF &= ~(1<<7);
+ 728               		.loc 1 101 5 view .LVU146
+ 101:rn42/rn42.c   ****     PORTF &= ~(1<<7);
+ 729               		.loc 1 101 10 is_stmt 0 view .LVU147
+ 730 0000 879A      		sbi 0x10,7
+ 102:rn42/rn42.c   **** }
+ 731               		.loc 1 102 5 is_stmt 1 view .LVU148
+ 102:rn42/rn42.c   **** }
+ 732               		.loc 1 102 11 is_stmt 0 view .LVU149
+ 733 0002 8F98      		cbi 0x11,7
+ 734               	/* epilogue start */
+ 103:rn42/rn42.c   **** 
+ 735               		.loc 1 103 1 view .LVU150
+ 736 0004 0895      		ret
+ 737               		.cfi_endproc
+ 738               	.LFE107:
+ 740               		.section	.text.rn42_rts,"ax",@progbits
+ 741               	.global	rn42_rts
+ 743               	rn42_rts:
+ 744               	.LFB108:
+ 106:rn42/rn42.c   ****     // low when RN-42 is powered and ready to receive
+ 745               		.loc 1 106 1 is_stmt 1 view -0
+ 746               		.cfi_startproc
+ 747               	/* prologue: function */
+ 748               	/* frame size = 0 */
+ 749               	/* stack size = 0 */
+ 750               	.L__stack_usage = 0
+ 108:rn42/rn42.c   **** }
+ 751               		.loc 1 108 5 view .LVU152
+ 108:rn42/rn42.c   **** }
+ 752               		.loc 1 108 12 is_stmt 0 view .LVU153
+ 753 0000 8FB1      		in r24,0xf
+ 109:rn42/rn42.c   **** 
+ 754               		.loc 1 109 1 view .LVU154
+ 755 0002 8695      		lsr r24
+ 756 0004 8170      		andi r24,1
+ 757               	/* epilogue start */
+ 758 0006 0895      		ret
+ 759               		.cfi_endproc
+ 760               	.LFE108:
+ 762               		.section	.text.rn42_cts_hi,"ax",@progbits
+ 763               	.global	rn42_cts_hi
+ 765               	rn42_cts_hi:
+ 766               	.LFB109:
+ 112:rn42/rn42.c   ****     // not allow to send
+ 767               		.loc 1 112 1 is_stmt 1 view -0
+ 768               		.cfi_startproc
+ 769               	/* prologue: function */
+ 770               	/* frame size = 0 */
+ 771               	/* stack size = 0 */
+ 772               	.L__stack_usage = 0
+ 114:rn42/rn42.c   **** }
+ 773               		.loc 1 114 5 view .LVU156
+ 114:rn42/rn42.c   **** }
+ 774               		.loc 1 114 11 is_stmt 0 view .LVU157
+ 775 0000 5D9A      		sbi 0xb,5
+ 776               	/* epilogue start */
+ 115:rn42/rn42.c   **** 
+ 777               		.loc 1 115 1 view .LVU158
+ 778 0002 0895      		ret
+ 779               		.cfi_endproc
+ 780               	.LFE109:
+ 782               		.section	.text.rn42_cts_lo,"ax",@progbits
+ 783               	.global	rn42_cts_lo
+ 785               	rn42_cts_lo:
+ 786               	.LFB110:
+ 118:rn42/rn42.c   ****     // allow to send
+ 787               		.loc 1 118 1 is_stmt 1 view -0
+ 788               		.cfi_startproc
+ 789               	/* prologue: function */
+ 790               	/* frame size = 0 */
+ 791               	/* stack size = 0 */
+ 792               	.L__stack_usage = 0
+ 120:rn42/rn42.c   **** }
+ 793               		.loc 1 120 5 view .LVU160
+ 120:rn42/rn42.c   **** }
+ 794               		.loc 1 120 11 is_stmt 0 view .LVU161
+ 795 0000 5D98      		cbi 0xb,5
+ 796               	/* epilogue start */
+ 121:rn42/rn42.c   **** 
+ 797               		.loc 1 121 1 view .LVU162
+ 798 0002 0895      		ret
+ 799               		.cfi_endproc
+ 800               	.LFE110:
+ 802               		.section	.text.rn42_linked,"ax",@progbits
+ 803               	.global	rn42_linked
+ 805               	rn42_linked:
+ 806               	.LFB111:
+ 124:rn42/rn42.c   ****     // RN-42 GPIO2
+ 807               		.loc 1 124 1 is_stmt 1 view -0
+ 808               		.cfi_startproc
+ 809               	/* prologue: function */
+ 810               	/* frame size = 0 */
+ 811               	/* stack size = 0 */
+ 812               	.L__stack_usage = 0
+ 129:rn42/rn42.c   **** }
+ 813               		.loc 1 129 5 view .LVU164
+ 129:rn42/rn42.c   **** }
+ 814               		.loc 1 129 12 is_stmt 0 view .LVU165
+ 815 0000 8FB1      		in r24,0xf
+ 130:rn42/rn42.c   **** 
+ 816               		.loc 1 130 1 view .LVU166
+ 817 0002 86FB      		bst r24,6
+ 818 0004 8827      		clr r24
+ 819 0006 80F9      		bld r24,0
+ 820               	/* epilogue start */
+ 821 0008 0895      		ret
+ 822               		.cfi_endproc
+ 823               	.LFE111:
+ 825               		.section	.text.rn42_set_leds,"ax",@progbits
+ 826               	.global	rn42_set_leds
+ 828               	rn42_set_leds:
+ 829               	.LVL59:
+ 830               	.LFB113:
+ 135:rn42/rn42.c   **** 
+ 831               		.loc 1 135 31 is_stmt 1 view -0
+ 832               		.cfi_startproc
+ 833               	/* prologue: function */
+ 834               	/* frame size = 0 */
+ 835               	/* stack size = 0 */
+ 836               	.L__stack_usage = 0
+ 135:rn42/rn42.c   **** 
+ 837               		.loc 1 135 33 view .LVU168
+ 135:rn42/rn42.c   **** 
+ 838               		.loc 1 135 38 is_stmt 0 view .LVU169
+ 839 0000 8093 0000 		sts leds,r24
+ 840               	/* epilogue start */
+ 135:rn42/rn42.c   **** 
+ 841               		.loc 1 135 1 view .LVU170
+ 842 0004 0895      		ret
+ 843               		.cfi_endproc
+ 844               	.LFE113:
+ 846               		.section	.text.rn42_send_str,"ax",@progbits
+ 847               	.global	rn42_send_str
+ 849               	rn42_send_str:
+ 850               	.LVL60:
+ 851               	.LFB114:
+ 139:rn42/rn42.c   ****     uint8_t c;
+ 852               		.loc 1 139 1 is_stmt 1 view -0
+ 853               		.cfi_startproc
+ 139:rn42/rn42.c   ****     uint8_t c;
+ 854               		.loc 1 139 1 is_stmt 0 view .LVU172
+ 855 0000 CF93      		push r28
+ 856               	.LCFI13:
+ 857               		.cfi_def_cfa_offset 3
+ 858               		.cfi_offset 28, -2
+ 859 0002 DF93      		push r29
+ 860               	.LCFI14:
+ 861               		.cfi_def_cfa_offset 4
+ 862               		.cfi_offset 29, -3
+ 863               	/* prologue: function */
+ 864               	/* frame size = 0 */
+ 865               	/* stack size = 2 */
+ 866               	.L__stack_usage = 2
+ 867 0004 EC01      		movw r28,r24
+ 140:rn42/rn42.c   ****     while ((c = pgm_read_byte(str++)))
+ 868               		.loc 1 140 5 is_stmt 1 view .LVU173
+ 141:rn42/rn42.c   ****         rn42_putc(c);
+ 869               		.loc 1 141 5 view .LVU174
+ 870               	.LVL61:
+ 871               	.L62:
+ 872               	.LBB18:
+ 141:rn42/rn42.c   ****         rn42_putc(c);
+ 873               		.loc 1 141 17 view .LVU175
+ 141:rn42/rn42.c   ****         rn42_putc(c);
+ 874               		.loc 1 141 17 view .LVU176
+ 141:rn42/rn42.c   ****         rn42_putc(c);
+ 875               		.loc 1 141 17 view .LVU177
+ 876 0006 FE01      		movw r30,r28
+ 877               	/* #APP */
+ 878               	 ;  141 "rn42/rn42.c" 1
+ 879 0008 8491      		lpm r24, Z
+ 880               		
+ 881               	 ;  0 "" 2
+ 882               	.LVL62:
+ 141:rn42/rn42.c   ****         rn42_putc(c);
+ 883               		.loc 1 141 17 view .LVU178
+ 141:rn42/rn42.c   ****         rn42_putc(c);
+ 884               		.loc 1 141 17 is_stmt 0 view .LVU179
+ 885               	/* #NOAPP */
+ 886 000a 2196      		adiw r28,1
+ 887               	.LVL63:
+ 141:rn42/rn42.c   ****         rn42_putc(c);
+ 888               		.loc 1 141 17 view .LVU180
+ 889               	.LBE18:
+ 141:rn42/rn42.c   ****         rn42_putc(c);
+ 890               		.loc 1 141 11 view .LVU181
+ 891 000c 8111      		cpse r24,__zero_reg__
+ 892 000e 00C0      		rjmp .L63
+ 893               	/* epilogue start */
+ 143:rn42/rn42.c   **** 
+ 894               		.loc 1 143 1 view .LVU182
+ 895 0010 DF91      		pop r29
+ 896 0012 CF91      		pop r28
+ 897               	.LVL64:
+ 143:rn42/rn42.c   **** 
+ 898               		.loc 1 143 1 view .LVU183
+ 899 0014 0895      		ret
+ 900               	.LVL65:
+ 901               	.L63:
+ 142:rn42/rn42.c   **** }
+ 902               		.loc 1 142 9 is_stmt 1 view .LVU184
+ 903               	.LBB19:
+ 904               	.LBI19:
+  73:rn42/rn42.c   **** {
+ 905               		.loc 1 73 6 view .LVU185
+ 906               	.LBB20:
+  75:rn42/rn42.c   **** }
+ 907               		.loc 1 75 5 view .LVU186
+ 908 0016 0E94 0000 		call serial_send
+ 909               	.LVL66:
+  75:rn42/rn42.c   **** }
+ 910               		.loc 1 75 5 is_stmt 0 view .LVU187
+ 911 001a 00C0      		rjmp .L62
+ 912               	.LBE20:
+ 913               	.LBE19:
+ 914               		.cfi_endproc
+ 915               	.LFE114:
+ 917               		.section	.text.rn42_print_response,"ax",@progbits
+ 918               	.global	rn42_print_response
+ 920               	rn42_print_response:
+ 921               	.LFB116:
+ 157:rn42/rn42.c   ****     int16_t c;
+ 922               		.loc 1 157 1 is_stmt 1 view -0
+ 923               		.cfi_startproc
+ 924 0000 CF93      		push r28
+ 925               	.LCFI15:
+ 926               		.cfi_def_cfa_offset 3
+ 927               		.cfi_offset 28, -2
+ 928 0002 DF93      		push r29
+ 929               	.LCFI16:
+ 930               		.cfi_def_cfa_offset 4
+ 931               		.cfi_offset 29, -3
+ 932               	/* prologue: function */
+ 933               	/* frame size = 0 */
+ 934               	/* stack size = 2 */
+ 935               	.L__stack_usage = 2
+ 158:rn42/rn42.c   ****     while ((c = rn42_getc()) != -1) {
+ 936               		.loc 1 158 5 view .LVU189
+ 159:rn42/rn42.c   ****         xprintf("%c", c);
+ 937               		.loc 1 159 5 view .LVU190
+ 160:rn42/rn42.c   ****     }
+ 938               		.loc 1 160 9 is_stmt 0 view .LVU191
+ 939 0004 C0E0      		ldi r28,lo8(__c.4686)
+ 940 0006 D0E0      		ldi r29,hi8(__c.4686)
+ 941               	.L65:
+ 942               	.LBB24:
+ 943               	.LBI24:
+  51:rn42/rn42.c   **** {
+ 944               		.loc 1 51 9 is_stmt 1 view .LVU192
+ 945               	.LBB25:
+  53:rn42/rn42.c   **** }
+ 946               		.loc 1 53 5 view .LVU193
+  53:rn42/rn42.c   **** }
+ 947               		.loc 1 53 12 is_stmt 0 view .LVU194
+ 948 0008 0E94 0000 		call serial_recv2
+ 949               	.LVL67:
+  53:rn42/rn42.c   **** }
+ 950               		.loc 1 53 12 view .LVU195
+ 951               	.LBE25:
+ 952               	.LBE24:
+ 159:rn42/rn42.c   ****         xprintf("%c", c);
+ 953               		.loc 1 159 11 view .LVU196
+ 954 000c 8F3F      		cpi r24,-1
+ 955 000e 9807      		cpc r25,r24
+ 956 0010 01F4      		brne .L66
+ 957               	/* epilogue start */
+ 162:rn42/rn42.c   **** 
+ 958               		.loc 1 162 1 view .LVU197
+ 959 0012 DF91      		pop r29
+ 960 0014 CF91      		pop r28
+ 961 0016 0895      		ret
+ 962               	.L66:
+ 160:rn42/rn42.c   ****     }
+ 963               		.loc 1 160 9 is_stmt 1 view .LVU198
+ 964               	.LBB26:
+ 160:rn42/rn42.c   ****     }
+ 965               		.loc 1 160 9 view .LVU199
+ 160:rn42/rn42.c   ****     }
+ 966               		.loc 1 160 9 view .LVU200
+ 967               	.LBE26:
+ 968 0018 9F93      		push r25
+ 969               	.LCFI17:
+ 970               		.cfi_def_cfa_offset 5
+ 971 001a 8F93      		push r24
+ 972               	.LCFI18:
+ 973               		.cfi_def_cfa_offset 6
+ 974 001c DF93      		push r29
+ 975               	.LCFI19:
+ 976               		.cfi_def_cfa_offset 7
+ 977 001e CF93      		push r28
+ 978               	.LCFI20:
+ 979               		.cfi_def_cfa_offset 8
+ 980 0020 0E94 0000 		call __xprintf
+ 981               	.LVL68:
+ 160:rn42/rn42.c   ****     }
+ 982               		.loc 1 160 9 is_stmt 0 view .LVU201
+ 983 0024 0F90      		pop __tmp_reg__
+ 984 0026 0F90      		pop __tmp_reg__
+ 985 0028 0F90      		pop __tmp_reg__
+ 986 002a 0F90      		pop __tmp_reg__
+ 987               	.LCFI21:
+ 988               		.cfi_def_cfa_offset 4
+ 989 002c 00C0      		rjmp .L65
+ 990               		.cfi_endproc
+ 991               	.LFE116:
+ 993               		.section	.text.rn42_send_command,"ax",@progbits
+ 994               	.global	rn42_send_command
+ 996               	rn42_send_command:
+ 997               	.LVL69:
+ 998               	.LFB115:
+ 146:rn42/rn42.c   ****     static const char *s;
+ 999               		.loc 1 146 1 is_stmt 1 view -0
+ 1000               		.cfi_startproc
+ 1001               	/* prologue: function */
+ 1002               	/* frame size = 0 */
+ 1003               	/* stack size = 0 */
+ 1004               	.L__stack_usage = 0
+ 147:rn42/rn42.c   ****     rn42_send_str(cmd);
+ 1005               		.loc 1 147 5 view .LVU203
+ 148:rn42/rn42.c   ****     wait_ms(500);
+ 1006               		.loc 1 148 5 view .LVU204
+ 1007 0000 0E94 0000 		call rn42_send_str
+ 1008               	.LVL70:
+ 149:rn42/rn42.c   ****     s = rn42_gets(100);
+ 1009               		.loc 1 149 5 view .LVU205
+ 1010               	.LBB27:
+ 1011               	.LBI27:
+ 1012               		.file 2 "/usr/avr/include/util/delay.h"
+   1:/usr/avr/include/util/delay.h **** /* Copyright (c) 2002, Marek Michalkiewicz
+   2:/usr/avr/include/util/delay.h ****    Copyright (c) 2004,2005,2007 Joerg Wunsch
+   3:/usr/avr/include/util/delay.h ****    Copyright (c) 2007  Florin-Viorel Petrov
+   4:/usr/avr/include/util/delay.h ****    All rights reserved.
+   5:/usr/avr/include/util/delay.h **** 
+   6:/usr/avr/include/util/delay.h ****    Redistribution and use in source and binary forms, with or without
+   7:/usr/avr/include/util/delay.h ****    modification, are permitted provided that the following conditions are met:
+   8:/usr/avr/include/util/delay.h **** 
+   9:/usr/avr/include/util/delay.h ****    * Redistributions of source code must retain the above copyright
+  10:/usr/avr/include/util/delay.h ****      notice, this list of conditions and the following disclaimer.
+  11:/usr/avr/include/util/delay.h **** 
+  12:/usr/avr/include/util/delay.h ****    * Redistributions in binary form must reproduce the above copyright
+  13:/usr/avr/include/util/delay.h ****      notice, this list of conditions and the following disclaimer in
+  14:/usr/avr/include/util/delay.h ****      the documentation and/or other materials provided with the
+  15:/usr/avr/include/util/delay.h ****      distribution.
+  16:/usr/avr/include/util/delay.h **** 
+  17:/usr/avr/include/util/delay.h ****    * Neither the name of the copyright holders nor the names of
+  18:/usr/avr/include/util/delay.h ****      contributors may be used to endorse or promote products derived
+  19:/usr/avr/include/util/delay.h ****      from this software without specific prior written permission.
+  20:/usr/avr/include/util/delay.h **** 
+  21:/usr/avr/include/util/delay.h ****   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  22:/usr/avr/include/util/delay.h ****   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  23:/usr/avr/include/util/delay.h ****   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  24:/usr/avr/include/util/delay.h ****   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+  25:/usr/avr/include/util/delay.h ****   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+  26:/usr/avr/include/util/delay.h ****   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+  27:/usr/avr/include/util/delay.h ****   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+  28:/usr/avr/include/util/delay.h ****   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+  29:/usr/avr/include/util/delay.h ****   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+  30:/usr/avr/include/util/delay.h ****   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+  31:/usr/avr/include/util/delay.h ****   POSSIBILITY OF SUCH DAMAGE. */
+  32:/usr/avr/include/util/delay.h **** 
+  33:/usr/avr/include/util/delay.h **** /* $Id: delay.h.in 2506 2016-02-08 10:05:45Z joerg_wunsch $ */
+  34:/usr/avr/include/util/delay.h **** 
+  35:/usr/avr/include/util/delay.h **** #ifndef _UTIL_DELAY_H_
+  36:/usr/avr/include/util/delay.h **** #define _UTIL_DELAY_H_ 1
+  37:/usr/avr/include/util/delay.h **** 
+  38:/usr/avr/include/util/delay.h **** #ifndef __DOXYGEN__
+  39:/usr/avr/include/util/delay.h **** #  ifndef __HAS_DELAY_CYCLES
+  40:/usr/avr/include/util/delay.h **** #    define __HAS_DELAY_CYCLES 1
+  41:/usr/avr/include/util/delay.h **** #  endif
+  42:/usr/avr/include/util/delay.h **** #endif  /* __DOXYGEN__ */
+  43:/usr/avr/include/util/delay.h **** 
+  44:/usr/avr/include/util/delay.h **** #include <inttypes.h>
+  45:/usr/avr/include/util/delay.h **** #include <util/delay_basic.h>
+  46:/usr/avr/include/util/delay.h **** #include <math.h>
+  47:/usr/avr/include/util/delay.h **** 
+  48:/usr/avr/include/util/delay.h **** /** \file */
+  49:/usr/avr/include/util/delay.h **** /** \defgroup util_delay <util/delay.h>: Convenience functions for busy-wait delay loops
+  50:/usr/avr/include/util/delay.h ****     \code
+  51:/usr/avr/include/util/delay.h ****     #define F_CPU 1000000UL  // 1 MHz
+  52:/usr/avr/include/util/delay.h ****     //#define F_CPU 14.7456E6
+  53:/usr/avr/include/util/delay.h ****     #include <util/delay.h>
+  54:/usr/avr/include/util/delay.h ****     \endcode
+  55:/usr/avr/include/util/delay.h **** 
+  56:/usr/avr/include/util/delay.h ****     \note As an alternative method, it is possible to pass the
+  57:/usr/avr/include/util/delay.h ****     F_CPU macro down to the compiler from the Makefile.
+  58:/usr/avr/include/util/delay.h ****     Obviously, in that case, no \c \#define statement should be
+  59:/usr/avr/include/util/delay.h ****     used.
+  60:/usr/avr/include/util/delay.h **** 
+  61:/usr/avr/include/util/delay.h ****     The functions in this header file are wrappers around the basic
+  62:/usr/avr/include/util/delay.h ****     busy-wait functions from <util/delay_basic.h>.  They are meant as
+  63:/usr/avr/include/util/delay.h ****     convenience functions where actual time values can be specified
+  64:/usr/avr/include/util/delay.h ****     rather than a number of cycles to wait for.  The idea behind is
+  65:/usr/avr/include/util/delay.h ****     that compile-time constant expressions will be eliminated by
+  66:/usr/avr/include/util/delay.h ****     compiler optimization so floating-point expressions can be used
+  67:/usr/avr/include/util/delay.h ****     to calculate the number of delay cycles needed based on the CPU
+  68:/usr/avr/include/util/delay.h ****     frequency passed by the macro F_CPU.
+  69:/usr/avr/include/util/delay.h **** 
+  70:/usr/avr/include/util/delay.h ****     \note In order for these functions to work as intended, compiler
+  71:/usr/avr/include/util/delay.h ****     optimizations <em>must</em> be enabled, and the delay time
+  72:/usr/avr/include/util/delay.h ****     <em>must</em> be an expression that is a known constant at
+  73:/usr/avr/include/util/delay.h ****     compile-time.  If these requirements are not met, the resulting
+  74:/usr/avr/include/util/delay.h ****     delay will be much longer (and basically unpredictable), and
+  75:/usr/avr/include/util/delay.h ****     applications that otherwise do not use floating-point calculations
+  76:/usr/avr/include/util/delay.h ****     will experience severe code bloat by the floating-point library
+  77:/usr/avr/include/util/delay.h ****     routines linked into the application.
+  78:/usr/avr/include/util/delay.h **** 
+  79:/usr/avr/include/util/delay.h ****     The functions available allow the specification of microsecond, and
+  80:/usr/avr/include/util/delay.h ****     millisecond delays directly, using the application-supplied macro
+  81:/usr/avr/include/util/delay.h ****     F_CPU as the CPU clock frequency (in Hertz).
+  82:/usr/avr/include/util/delay.h **** 
+  83:/usr/avr/include/util/delay.h **** */
+  84:/usr/avr/include/util/delay.h **** 
+  85:/usr/avr/include/util/delay.h **** #if !defined(__DOXYGEN__)
+  86:/usr/avr/include/util/delay.h **** static __inline__ void _delay_us(double __us) __attribute__((__always_inline__));
+  87:/usr/avr/include/util/delay.h **** static __inline__ void _delay_ms(double __ms) __attribute__((__always_inline__));
+  88:/usr/avr/include/util/delay.h **** #endif
+  89:/usr/avr/include/util/delay.h **** 
+  90:/usr/avr/include/util/delay.h **** #ifndef F_CPU
+  91:/usr/avr/include/util/delay.h **** /* prevent compiler error by supplying a default */
+  92:/usr/avr/include/util/delay.h **** # warning "F_CPU not defined for <util/delay.h>"
+  93:/usr/avr/include/util/delay.h **** /** \ingroup util_delay
+  94:/usr/avr/include/util/delay.h ****     \def F_CPU
+  95:/usr/avr/include/util/delay.h ****     \brief CPU frequency in Hz
+  96:/usr/avr/include/util/delay.h **** 
+  97:/usr/avr/include/util/delay.h ****     The macro F_CPU specifies the CPU frequency to be considered by
+  98:/usr/avr/include/util/delay.h ****     the delay macros.  This macro is normally supplied by the
+  99:/usr/avr/include/util/delay.h ****     environment (e.g. from within a project header, or the project's
+ 100:/usr/avr/include/util/delay.h ****     Makefile).  The value 1 MHz here is only provided as a "vanilla"
+ 101:/usr/avr/include/util/delay.h ****     fallback if no such user-provided definition could be found.
+ 102:/usr/avr/include/util/delay.h **** 
+ 103:/usr/avr/include/util/delay.h ****     In terms of the delay functions, the CPU frequency can be given as
+ 104:/usr/avr/include/util/delay.h ****     a floating-point constant (e.g. 3.6864E6 for 3.6864 MHz).
+ 105:/usr/avr/include/util/delay.h ****     However, the macros in <util/setbaud.h> require it to be an
+ 106:/usr/avr/include/util/delay.h ****     integer value.
+ 107:/usr/avr/include/util/delay.h ****  */
+ 108:/usr/avr/include/util/delay.h **** # define F_CPU 1000000UL
+ 109:/usr/avr/include/util/delay.h **** #endif
+ 110:/usr/avr/include/util/delay.h **** 
+ 111:/usr/avr/include/util/delay.h **** #ifndef __OPTIMIZE__
+ 112:/usr/avr/include/util/delay.h **** # warning "Compiler optimizations disabled; functions from <util/delay.h> won't work as designed"
+ 113:/usr/avr/include/util/delay.h **** #endif
+ 114:/usr/avr/include/util/delay.h **** 
+ 115:/usr/avr/include/util/delay.h **** #if __HAS_DELAY_CYCLES && defined(__OPTIMIZE__) && \
+ 116:/usr/avr/include/util/delay.h ****   !defined(__DELAY_BACKWARD_COMPATIBLE__) &&	   \
+ 117:/usr/avr/include/util/delay.h ****   __STDC_HOSTED__
+ 118:/usr/avr/include/util/delay.h **** #  include <math.h>
+ 119:/usr/avr/include/util/delay.h **** #endif
+ 120:/usr/avr/include/util/delay.h **** 
+ 121:/usr/avr/include/util/delay.h **** /**
+ 122:/usr/avr/include/util/delay.h ****    \ingroup util_delay
+ 123:/usr/avr/include/util/delay.h **** 
+ 124:/usr/avr/include/util/delay.h ****    Perform a delay of \c __ms milliseconds, using _delay_loop_2().
+ 125:/usr/avr/include/util/delay.h **** 
+ 126:/usr/avr/include/util/delay.h ****    The macro F_CPU is supposed to be defined to a
+ 127:/usr/avr/include/util/delay.h ****    constant defining the CPU clock frequency (in Hertz).
+ 128:/usr/avr/include/util/delay.h **** 
+ 129:/usr/avr/include/util/delay.h ****    The maximal possible delay is 262.14 ms / F_CPU in MHz.
+ 130:/usr/avr/include/util/delay.h **** 
+ 131:/usr/avr/include/util/delay.h ****    When the user request delay which exceed the maximum possible one,
+ 132:/usr/avr/include/util/delay.h ****    _delay_ms() provides a decreased resolution functionality. In this
+ 133:/usr/avr/include/util/delay.h ****    mode _delay_ms() will work with a resolution of 1/10 ms, providing
+ 134:/usr/avr/include/util/delay.h ****    delays up to 6.5535 seconds (independent from CPU frequency).  The
+ 135:/usr/avr/include/util/delay.h ****    user will not be informed about decreased resolution.
+ 136:/usr/avr/include/util/delay.h **** 
+ 137:/usr/avr/include/util/delay.h ****    If the avr-gcc toolchain has __builtin_avr_delay_cycles()
+ 138:/usr/avr/include/util/delay.h ****    support, maximal possible delay is 4294967.295 ms/ F_CPU in MHz. For
+ 139:/usr/avr/include/util/delay.h ****    values greater than the maximal possible delay, overflows results in
+ 140:/usr/avr/include/util/delay.h ****    no delay i.e., 0ms.
+ 141:/usr/avr/include/util/delay.h **** 
+ 142:/usr/avr/include/util/delay.h ****    Conversion of \c __ms into clock cycles may not always result in
+ 143:/usr/avr/include/util/delay.h ****    integer.  By default, the clock cycles rounded up to next
+ 144:/usr/avr/include/util/delay.h ****    integer. This ensures that the user gets at least \c __ms
+ 145:/usr/avr/include/util/delay.h ****    microseconds of delay.
+ 146:/usr/avr/include/util/delay.h **** 
+ 147:/usr/avr/include/util/delay.h ****    Alternatively, by defining the macro \c __DELAY_ROUND_DOWN__, or
+ 148:/usr/avr/include/util/delay.h ****    \c __DELAY_ROUND_CLOSEST__, before including this header file, the
+ 149:/usr/avr/include/util/delay.h ****    algorithm can be made to round down, or round to closest integer,
+ 150:/usr/avr/include/util/delay.h ****    respectively.
+ 151:/usr/avr/include/util/delay.h **** 
+ 152:/usr/avr/include/util/delay.h ****    \note
+ 153:/usr/avr/include/util/delay.h **** 
+ 154:/usr/avr/include/util/delay.h ****    The implementation of _delay_ms() based on
+ 155:/usr/avr/include/util/delay.h ****    __builtin_avr_delay_cycles() is not backward compatible with older
+ 156:/usr/avr/include/util/delay.h ****    implementations.  In order to get functionality backward compatible
+ 157:/usr/avr/include/util/delay.h ****    with previous versions, the macro \c "__DELAY_BACKWARD_COMPATIBLE__"
+ 158:/usr/avr/include/util/delay.h ****    must be defined before including this header file. Also, the
+ 159:/usr/avr/include/util/delay.h ****    backward compatible algorithm will be chosen if the code is
+ 160:/usr/avr/include/util/delay.h ****    compiled in a <em>freestanding environment</em> (GCC option
+ 161:/usr/avr/include/util/delay.h ****    \c -ffreestanding), as the math functions required for rounding are
+ 162:/usr/avr/include/util/delay.h ****    not available to the compiler then.
+ 163:/usr/avr/include/util/delay.h **** 
+ 164:/usr/avr/include/util/delay.h ****  */
+ 165:/usr/avr/include/util/delay.h **** void
+ 166:/usr/avr/include/util/delay.h **** _delay_ms(double __ms)
+ 1013               		.loc 2 166 1 view .LVU206
+ 1014               	.LBB28:
+ 167:/usr/avr/include/util/delay.h **** {
+ 168:/usr/avr/include/util/delay.h **** 	double __tmp ;
+ 1015               		.loc 2 168 2 view .LVU207
+ 169:/usr/avr/include/util/delay.h **** #if __HAS_DELAY_CYCLES && defined(__OPTIMIZE__) && \
+ 170:/usr/avr/include/util/delay.h ****   !defined(__DELAY_BACKWARD_COMPATIBLE__) &&	   \
+ 171:/usr/avr/include/util/delay.h ****   __STDC_HOSTED__
+ 172:/usr/avr/include/util/delay.h **** 	uint32_t __ticks_dc;
+ 1016               		.loc 2 172 2 view .LVU208
+ 173:/usr/avr/include/util/delay.h **** 	extern void __builtin_avr_delay_cycles(unsigned long);
+ 1017               		.loc 2 173 2 view .LVU209
+ 174:/usr/avr/include/util/delay.h **** 	__tmp = ((F_CPU) / 1e3) * __ms;
+ 1018               		.loc 2 174 2 view .LVU210
+ 175:/usr/avr/include/util/delay.h **** 
+ 176:/usr/avr/include/util/delay.h **** 	#if defined(__DELAY_ROUND_DOWN__)
+ 177:/usr/avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)fabs(__tmp);
+ 178:/usr/avr/include/util/delay.h **** 
+ 179:/usr/avr/include/util/delay.h **** 	#elif defined(__DELAY_ROUND_CLOSEST__)
+ 180:/usr/avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)(fabs(__tmp)+0.5);
+ 181:/usr/avr/include/util/delay.h **** 
+ 182:/usr/avr/include/util/delay.h **** 	#else
+ 183:/usr/avr/include/util/delay.h **** 		//round up by default
+ 184:/usr/avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)(ceil(fabs(__tmp)));
+ 1019               		.loc 2 184 3 view .LVU211
+ 185:/usr/avr/include/util/delay.h **** 	#endif
+ 186:/usr/avr/include/util/delay.h **** 
+ 187:/usr/avr/include/util/delay.h **** 	__builtin_avr_delay_cycles(__ticks_dc);
+ 1020               		.loc 2 187 2 view .LVU212
+ 1021 0004 2FEF      		ldi r18,lo8(1599999)
+ 1022 0006 89E6      		ldi r24,hi8(1599999)
+ 1023 0008 98E1      		ldi r25,hlo8(1599999)
+ 1024 000a 2150      	1:	subi r18,1
+ 1025 000c 8040      		sbci r24,0
+ 1026 000e 9040      		sbci r25,0
+ 1027 0010 01F4      		brne 1b
+ 1028 0012 00C0      		rjmp .
+ 1029 0014 0000      		nop
+ 1030               	.LVL71:
+ 1031               		.loc 2 187 2 is_stmt 0 view .LVU213
+ 1032               	.LBE28:
+ 1033               	.LBE27:
+ 150:rn42/rn42.c   ****     xprintf("%s\r\n", s);
+ 1034               		.loc 1 150 5 is_stmt 1 view .LVU214
+ 150:rn42/rn42.c   ****     xprintf("%s\r\n", s);
+ 1035               		.loc 1 150 9 is_stmt 0 view .LVU215
+ 1036 0016 84E6      		ldi r24,lo8(100)
+ 1037 0018 90E0      		ldi r25,0
+ 1038 001a 0E94 0000 		call rn42_gets
+ 1039               	.LVL72:
+ 150:rn42/rn42.c   ****     xprintf("%s\r\n", s);
+ 1040               		.loc 1 150 7 view .LVU216
+ 1041 001e 8093 0000 		sts s.4679,r24
+ 1042 0022 9093 0000 		sts s.4679+1,r25
+ 151:rn42/rn42.c   ****     rn42_print_response();
+ 1043               		.loc 1 151 5 is_stmt 1 view .LVU217
+ 1044               	.LBB29:
+ 151:rn42/rn42.c   ****     rn42_print_response();
+ 1045               		.loc 1 151 5 view .LVU218
+ 151:rn42/rn42.c   ****     rn42_print_response();
+ 1046               		.loc 1 151 5 view .LVU219
+ 1047               	.LBE29:
+ 1048 0026 9F93      		push r25
+ 1049               	.LCFI22:
+ 1050               		.cfi_def_cfa_offset 3
+ 1051 0028 8F93      		push r24
+ 1052               	.LCFI23:
+ 1053               		.cfi_def_cfa_offset 4
+ 1054 002a 80E0      		ldi r24,lo8(__c.4680)
+ 1055 002c 90E0      		ldi r25,hi8(__c.4680)
+ 1056 002e 9F93      		push r25
+ 1057               	.LCFI24:
+ 1058               		.cfi_def_cfa_offset 5
+ 1059 0030 8F93      		push r24
+ 1060               	.LCFI25:
+ 1061               		.cfi_def_cfa_offset 6
+ 1062 0032 0E94 0000 		call __xprintf
+ 1063               	.LVL73:
+ 152:rn42/rn42.c   ****     return s;
+ 1064               		.loc 1 152 5 view .LVU220
+ 1065 0036 0E94 0000 		call rn42_print_response
+ 1066               	.LVL74:
+ 153:rn42/rn42.c   **** }
+ 1067               		.loc 1 153 5 view .LVU221
+ 153:rn42/rn42.c   **** }
+ 1068               		.loc 1 153 12 is_stmt 0 view .LVU222
+ 1069 003a 0F90      		pop __tmp_reg__
+ 1070 003c 0F90      		pop __tmp_reg__
+ 1071 003e 0F90      		pop __tmp_reg__
+ 1072 0040 0F90      		pop __tmp_reg__
+ 1073               	.LCFI26:
+ 1074               		.cfi_def_cfa_offset 2
+ 154:rn42/rn42.c   **** 
+ 1075               		.loc 1 154 1 view .LVU223
+ 1076 0042 8091 0000 		lds r24,s.4679
+ 1077 0046 9091 0000 		lds r25,s.4679+1
+ 1078               	/* epilogue start */
+ 1079 004a 0895      		ret
+ 1080               		.cfi_endproc
+ 1081               	.LFE115:
+ 1083               		.section	.progmem.data.__c.4686,"a"
+ 1086               	__c.4686:
+ 1087 0000 2563 00   		.string	"%c"
+ 1088               		.section	.progmem.data.__c.4680,"a"
+ 1091               	__c.4680:
+ 1092 0000 2573 0D0A 		.string	"%s\r\n"
+ 1092      00
+ 1093               		.section	.bss.s.4679,"aw",@nobits
+ 1096               	s.4679:
+ 1097 0000 0000      		.zero	2
+ 1098               		.section	.bss.s.4622,"aw",@nobits
+ 1101               	s.4622:
+ 1102 0000 0000 0000 		.zero	24
+ 1102      0000 0000 
+ 1102      0000 0000 
+ 1102      0000 0000 
+ 1102      0000 0000 
+ 1103               		.section	.bss.leds,"aw",@nobits
+ 1106               	leds:
+ 1107 0000 00        		.zero	1
+ 1108               	.global	rn42_config_driver
+ 1109               		.section	.data.rn42_config_driver,"aw"
+ 1112               	rn42_config_driver:
+ 1113 0000 0000      		.word	gs(config_keyboard_leds)
+ 1114 0002 0000      		.word	gs(config_send_keyboard)
+ 1115 0004 0000      		.word	gs(config_send_mouse)
+ 1116 0006 0000      		.word	gs(config_send_system)
+ 1117 0008 0000      		.word	gs(config_send_consumer)
+ 1118               	.global	rn42_driver
+ 1119               		.section	.data.rn42_driver,"aw"
+ 1122               	rn42_driver:
+ 1123 0000 0000      		.word	gs(keyboard_leds)
+ 1124 0002 0000      		.word	gs(send_keyboard)
+ 1125 0004 0000      		.word	gs(send_mouse)
+ 1126 0006 0000      		.word	gs(send_system)
+ 1127 0008 0000      		.word	gs(send_consumer)
+ 1128               		.text
+ 1129               	.Letext0:
+ 1130               		.file 3 "/usr/avr/include/stdint.h"
+ 1131               		.file 4 "../../tmk_core/protocol/lufa/LUFA-git/LUFA/Drivers/USB/Core/AVR8/../StdRequestType.h"
+ 1132               		.file 5 "../../tmk_core/protocol/lufa/LUFA-git/LUFA/Drivers/USB/Core/AVR8/../DeviceStandardReq.h"
+ 1133               		.file 6 "../../tmk_core/protocol/lufa/LUFA-git/LUFA/Drivers/USB/Core/USBTask.h"
+ 1134               		.file 7 "../../tmk_core/protocol/lufa/LUFA-git/LUFA/Drivers/USB/Core/HostStandardReq.h"
+ 1135               		.file 8 "/usr/avr/include/stdio.h"
+ 1136               		.file 9 "../../tmk_core/common/report.h"
+ 1137               		.file 10 "../../tmk_core/common/host_driver.h"
+ 1138               		.file 11 "../../tmk_core/common/host.h"
+ 1139               		.file 12 "rn42/rn42.h"
+ 1140               		.file 13 "../../tmk_core/common/avr/xprintf.h"
+ 1141               		.file 14 "../../tmk_core/common/timer.h"
+ 1142               		.file 15 "../../tmk_core/protocol/serial.h"
+DEFINED SYMBOLS
+                            *ABS*:0000000000000000 rn42.c
+     /tmp/cciGo0Ab.s:2      *ABS*:000000000000003e __SP_H__
+     /tmp/cciGo0Ab.s:3      *ABS*:000000000000003d __SP_L__
+     /tmp/cciGo0Ab.s:4      *ABS*:000000000000003f __SREG__
+     /tmp/cciGo0Ab.s:5      *ABS*:0000000000000000 __tmp_reg__
+     /tmp/cciGo0Ab.s:6      *ABS*:0000000000000001 __zero_reg__
+     /tmp/cciGo0Ab.s:12     .text.keyboard_leds:0000000000000000 keyboard_leds
+     /tmp/cciGo0Ab.s:1106   .bss.leds:0000000000000000 leds
+     /tmp/cciGo0Ab.s:31     .text.send_system:0000000000000000 send_system
+     /tmp/cciGo0Ab.s:48     .text.config_send_keyboard:0000000000000000 config_send_keyboard
+     /tmp/cciGo0Ab.s:66     .text.send_consumer:0000000000000000 send_consumer
+     /tmp/cciGo0Ab.s:221    .text.send_mouse:0000000000000000 send_mouse
+     /tmp/cciGo0Ab.s:281    .text.send_keyboard:0000000000000000 send_keyboard
+     /tmp/cciGo0Ab.s:357    .text.config_send_mouse:0000000000000000 config_send_mouse
+     /tmp/cciGo0Ab.s:371    .text.config_send_consumer:0000000000000000 config_send_consumer
+     /tmp/cciGo0Ab.s:385    .text.config_send_system:0000000000000000 config_send_system
+     /tmp/cciGo0Ab.s:399    .text.config_keyboard_leds:0000000000000000 config_keyboard_leds
+     /tmp/cciGo0Ab.s:415    .text.rn42_getc:0000000000000000 rn42_getc
+     /tmp/cciGo0Ab.s:433    .text.rn42_gets:0000000000000000 rn42_gets
+     /tmp/cciGo0Ab.s:1101   .bss.s.4622:0000000000000000 s.4622
+     /tmp/cciGo0Ab.s:559    .text.rn42_putc:0000000000000000 rn42_putc
+     /tmp/cciGo0Ab.s:578    .text.rn42_puts:0000000000000000 rn42_puts
+     /tmp/cciGo0Ab.s:626    .text.rn42_autoconnecting:0000000000000000 rn42_autoconnecting
+     /tmp/cciGo0Ab.s:649    .text.rn42_autoconnect:0000000000000000 rn42_autoconnect
+     /tmp/cciGo0Ab.s:672    .text.rn42_init:0000000000000000 rn42_init
+     /tmp/cciGo0Ab.s:720    .text.rn42_disconnect:0000000000000000 rn42_disconnect
+     /tmp/cciGo0Ab.s:743    .text.rn42_rts:0000000000000000 rn42_rts
+     /tmp/cciGo0Ab.s:765    .text.rn42_cts_hi:0000000000000000 rn42_cts_hi
+     /tmp/cciGo0Ab.s:785    .text.rn42_cts_lo:0000000000000000 rn42_cts_lo
+     /tmp/cciGo0Ab.s:805    .text.rn42_linked:0000000000000000 rn42_linked
+     /tmp/cciGo0Ab.s:828    .text.rn42_set_leds:0000000000000000 rn42_set_leds
+     /tmp/cciGo0Ab.s:849    .text.rn42_send_str:0000000000000000 rn42_send_str
+     /tmp/cciGo0Ab.s:920    .text.rn42_print_response:0000000000000000 rn42_print_response
+     /tmp/cciGo0Ab.s:1086   .progmem.data.__c.4686:0000000000000000 __c.4686
+     /tmp/cciGo0Ab.s:996    .text.rn42_send_command:0000000000000000 rn42_send_command
+     /tmp/cciGo0Ab.s:1096   .bss.s.4679:0000000000000000 s.4679
+     /tmp/cciGo0Ab.s:1091   .progmem.data.__c.4680:0000000000000000 __c.4680
+     /tmp/cciGo0Ab.s:1112   .data.rn42_config_driver:0000000000000000 rn42_config_driver
+     /tmp/cciGo0Ab.s:1122   .data.rn42_driver:0000000000000000 rn42_driver
+
+UNDEFINED SYMBOLS
+serial_send
+serial_recv2
+timer_read
+timer_elapsed
+serial_init
+__xprintf
+__do_copy_data
+__do_clear_bss

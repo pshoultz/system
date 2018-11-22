@@ -1,0 +1,491 @@
+   1               		.file	"serial_uart.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__tmp_reg__ = 0
+   6               	__zero_reg__ = 1
+   7               		.text
+   8               	.Ltext0:
+   9               		.cfi_sections	.debug_frame
+  10               		.section	.text.serial_init,"ax",@progbits
+  11               	.global	serial_init
+  13               	serial_init:
+  14               	.LFB0:
+  15               		.file 1 "../../tmk_core/protocol/serial_uart.c"
+   1:../../tmk_core/protocol/serial_uart.c **** /*
+   2:../../tmk_core/protocol/serial_uart.c **** Copyright 2013 Jun WAKO <wakojun@gmail.com>
+   3:../../tmk_core/protocol/serial_uart.c **** 
+   4:../../tmk_core/protocol/serial_uart.c **** This software is licensed with a Modified BSD License.
+   5:../../tmk_core/protocol/serial_uart.c **** All of this is supposed to be Free Software, Open Source, DFSG-free,
+   6:../../tmk_core/protocol/serial_uart.c **** GPL-compatible, and OK to use in both free and proprietary applications.
+   7:../../tmk_core/protocol/serial_uart.c **** Additions and corrections to this file are welcome.
+   8:../../tmk_core/protocol/serial_uart.c **** 
+   9:../../tmk_core/protocol/serial_uart.c **** 
+  10:../../tmk_core/protocol/serial_uart.c **** Redistribution and use in source and binary forms, with or without
+  11:../../tmk_core/protocol/serial_uart.c **** modification, are permitted provided that the following conditions are met:
+  12:../../tmk_core/protocol/serial_uart.c **** 
+  13:../../tmk_core/protocol/serial_uart.c **** * Redistributions of source code must retain the above copyright
+  14:../../tmk_core/protocol/serial_uart.c ****   notice, this list of conditions and the following disclaimer.
+  15:../../tmk_core/protocol/serial_uart.c **** 
+  16:../../tmk_core/protocol/serial_uart.c **** * Redistributions in binary form must reproduce the above copyright
+  17:../../tmk_core/protocol/serial_uart.c ****   notice, this list of conditions and the following disclaimer in
+  18:../../tmk_core/protocol/serial_uart.c ****   the documentation and/or other materials provided with the
+  19:../../tmk_core/protocol/serial_uart.c ****   distribution.
+  20:../../tmk_core/protocol/serial_uart.c **** 
+  21:../../tmk_core/protocol/serial_uart.c **** * Neither the name of the copyright holders nor the names of
+  22:../../tmk_core/protocol/serial_uart.c ****   contributors may be used to endorse or promote products derived
+  23:../../tmk_core/protocol/serial_uart.c ****   from this software without specific prior written permission.
+  24:../../tmk_core/protocol/serial_uart.c **** 
+  25:../../tmk_core/protocol/serial_uart.c **** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  26:../../tmk_core/protocol/serial_uart.c **** AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  27:../../tmk_core/protocol/serial_uart.c **** IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  28:../../tmk_core/protocol/serial_uart.c **** ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+  29:../../tmk_core/protocol/serial_uart.c **** LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+  30:../../tmk_core/protocol/serial_uart.c **** CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+  31:../../tmk_core/protocol/serial_uart.c **** SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+  32:../../tmk_core/protocol/serial_uart.c **** INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+  33:../../tmk_core/protocol/serial_uart.c **** CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+  34:../../tmk_core/protocol/serial_uart.c **** ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+  35:../../tmk_core/protocol/serial_uart.c **** POSSIBILITY OF SUCH DAMAGE.
+  36:../../tmk_core/protocol/serial_uart.c **** */
+  37:../../tmk_core/protocol/serial_uart.c **** 
+  38:../../tmk_core/protocol/serial_uart.c **** #include <stdbool.h>
+  39:../../tmk_core/protocol/serial_uart.c **** #include <avr/io.h>
+  40:../../tmk_core/protocol/serial_uart.c **** #include <avr/interrupt.h>
+  41:../../tmk_core/protocol/serial_uart.c **** #include "serial.h"
+  42:../../tmk_core/protocol/serial_uart.c **** 
+  43:../../tmk_core/protocol/serial_uart.c **** 
+  44:../../tmk_core/protocol/serial_uart.c **** #if defined(SERIAL_UART_RTS_LO) && defined(SERIAL_UART_RTS_HI)
+  45:../../tmk_core/protocol/serial_uart.c ****     // Buffer state
+  46:../../tmk_core/protocol/serial_uart.c ****     //   Empty:           RBUF_SPACE == RBUF_SIZE(head==tail)
+  47:../../tmk_core/protocol/serial_uart.c ****     //   Last 1 space:    RBUF_SPACE == 2
+  48:../../tmk_core/protocol/serial_uart.c ****     //   Full:            RBUF_SPACE == 1(last cell of rbuf be never used.)
+  49:../../tmk_core/protocol/serial_uart.c ****     #define RBUF_SPACE()   (rbuf_head < rbuf_tail ?  (rbuf_tail - rbuf_head) : (RBUF_SIZE - rbuf_he
+  50:../../tmk_core/protocol/serial_uart.c ****     // allow to send
+  51:../../tmk_core/protocol/serial_uart.c ****     #define rbuf_check_rts_lo() do { if (RBUF_SPACE() > 2) SERIAL_UART_RTS_LO(); } while (0)
+  52:../../tmk_core/protocol/serial_uart.c ****     // prohibit to send
+  53:../../tmk_core/protocol/serial_uart.c ****     #define rbuf_check_rts_hi() do { if (RBUF_SPACE() <= 2) SERIAL_UART_RTS_HI(); } while (0)
+  54:../../tmk_core/protocol/serial_uart.c **** #else
+  55:../../tmk_core/protocol/serial_uart.c ****     #define rbuf_check_rts_lo()
+  56:../../tmk_core/protocol/serial_uart.c ****     #define rbuf_check_rts_hi()
+  57:../../tmk_core/protocol/serial_uart.c **** #endif
+  58:../../tmk_core/protocol/serial_uart.c **** 
+  59:../../tmk_core/protocol/serial_uart.c **** 
+  60:../../tmk_core/protocol/serial_uart.c **** void serial_init(void)
+  61:../../tmk_core/protocol/serial_uart.c **** {
+  16               		.loc 1 61 1 view -0
+  17               		.cfi_startproc
+  18               	/* prologue: function */
+  19               	/* frame size = 0 */
+  20               	/* stack size = 0 */
+  21               	.L__stack_usage = 0
+  62:../../tmk_core/protocol/serial_uart.c ****     SERIAL_UART_INIT();
+  22               		.loc 1 62 5 view .LVU1
+  23               		.loc 1 62 5 view .LVU2
+  24 0000 88E0      		ldi r24,lo8(8)
+  25 0002 8093 CC00 		sts 204,r24
+  26               		.loc 1 62 5 view .LVU3
+  27 0006 1092 CD00 		sts 205,__zero_reg__
+  28               		.loc 1 62 5 view .LVU4
+  29 000a E9EC      		ldi r30,lo8(-55)
+  30 000c F0E0      		ldi r31,0
+  31 000e 8081      		ld r24,Z
+  32 0010 8069      		ori r24,lo8(-112)
+  33 0012 8083      		st Z,r24
+  34               		.loc 1 62 5 view .LVU5
+  35 0014 8081      		ld r24,Z
+  36 0016 8860      		ori r24,lo8(8)
+  37 0018 8083      		st Z,r24
+  38               		.loc 1 62 5 view .LVU6
+  39 001a EAEC      		ldi r30,lo8(-54)
+  40 001c F0E0      		ldi r31,0
+  41 001e 8081      		ld r24,Z
+  42 0020 8083      		st Z,r24
+  43               		.loc 1 62 5 view .LVU7
+  44 0022 EBEC      		ldi r30,lo8(-53)
+  45 0024 F0E0      		ldi r31,0
+  46 0026 8081      		ld r24,Z
+  47 0028 8083      		st Z,r24
+  48               		.loc 1 62 5 view .LVU8
+  49 002a 559A      		sbi 0xa,5
+  50               		.loc 1 62 5 view .LVU9
+  51 002c 5D98      		cbi 0xb,5
+  52               		.loc 1 62 5 view .LVU10
+  53               	/* #APP */
+  54               	 ;  62 "../../tmk_core/protocol/serial_uart.c" 1
+  55 002e 7894      		sei
+  56               	 ;  0 "" 2
+  57               	/* #NOAPP */
+  58               	/* epilogue start */
+  63:../../tmk_core/protocol/serial_uart.c **** }
+  59               		.loc 1 63 1 is_stmt 0 view .LVU11
+  60 0030 0895      		ret
+  61               		.cfi_endproc
+  62               	.LFE0:
+  64               		.section	.text.serial_recv,"ax",@progbits
+  65               	.global	serial_recv
+  67               	serial_recv:
+  68               	.LFB1:
+  64:../../tmk_core/protocol/serial_uart.c **** 
+  65:../../tmk_core/protocol/serial_uart.c **** // RX ring buffer
+  66:../../tmk_core/protocol/serial_uart.c **** #define RBUF_SIZE   256
+  67:../../tmk_core/protocol/serial_uart.c **** static uint8_t rbuf[RBUF_SIZE];
+  68:../../tmk_core/protocol/serial_uart.c **** static uint8_t rbuf_head = 0;
+  69:../../tmk_core/protocol/serial_uart.c **** static uint8_t rbuf_tail = 0;
+  70:../../tmk_core/protocol/serial_uart.c **** 
+  71:../../tmk_core/protocol/serial_uart.c **** uint8_t serial_recv(void)
+  72:../../tmk_core/protocol/serial_uart.c **** {
+  69               		.loc 1 72 1 is_stmt 1 view -0
+  70               		.cfi_startproc
+  71               	/* prologue: function */
+  72               	/* frame size = 0 */
+  73               	/* stack size = 0 */
+  74               	.L__stack_usage = 0
+  73:../../tmk_core/protocol/serial_uart.c ****     uint8_t data = 0;
+  75               		.loc 1 73 5 view .LVU13
+  76               	.LVL0:
+  74:../../tmk_core/protocol/serial_uart.c ****     if (rbuf_head == rbuf_tail) {
+  77               		.loc 1 74 5 view .LVU14
+  78               		.loc 1 74 19 is_stmt 0 view .LVU15
+  79 0000 4091 0000 		lds r20,rbuf_head
+  80 0004 9091 0000 		lds r25,rbuf_tail
+  81               		.loc 1 74 8 view .LVU16
+  82 0008 4917      		cp r20,r25
+  83 000a 01F0      		breq .L8
+  75:../../tmk_core/protocol/serial_uart.c ****         return 0;
+  76:../../tmk_core/protocol/serial_uart.c ****     }
+  77:../../tmk_core/protocol/serial_uart.c **** 
+  78:../../tmk_core/protocol/serial_uart.c ****     data = rbuf[rbuf_tail];
+  84               		.loc 1 78 5 is_stmt 1 view .LVU17
+  85               		.loc 1 78 16 is_stmt 0 view .LVU18
+  86 000c 292F      		mov r18,r25
+  87 000e 30E0      		ldi r19,0
+  88               		.loc 1 78 10 view .LVU19
+  89 0010 F901      		movw r30,r18
+  90 0012 E050      		subi r30,lo8(-(rbuf))
+  91 0014 F040      		sbci r31,hi8(-(rbuf))
+  92 0016 8081      		ld r24,Z
+  93               	.LVL1:
+  79:../../tmk_core/protocol/serial_uart.c ****     rbuf_tail = (rbuf_tail + 1) % RBUF_SIZE;
+  94               		.loc 1 79 5 is_stmt 1 view .LVU20
+  95               		.loc 1 79 28 is_stmt 0 view .LVU21
+  96 0018 2F5F      		subi r18,-1
+  97 001a 3F4F      		sbci r19,-1
+  98               		.loc 1 79 33 view .LVU22
+  99 001c 3327      		clr r19
+ 100               		.loc 1 79 15 view .LVU23
+ 101 001e 9F5F      		subi r25,lo8(-(1))
+ 102 0020 9093 0000 		sts rbuf_tail,r25
+  80:../../tmk_core/protocol/serial_uart.c ****     rbuf_check_rts_lo();
+ 103               		.loc 1 80 5 is_stmt 1 view .LVU24
+ 104               		.loc 1 80 5 view .LVU25
+ 105 0024 642F      		mov r22,r20
+ 106 0026 70E0      		ldi r23,0
+ 107 0028 261B      		sub r18,r22
+ 108 002a 370B      		sbc r19,r23
+ 109 002c 4917      		cp r20,r25
+ 110 002e 00F4      		brsh .L4
+ 111               		.loc 1 80 5 is_stmt 0 discriminator 1 view .LVU26
+ 112 0030 2330      		cpi r18,3
+ 113 0032 3105      		cpc r19,__zero_reg__
+ 114 0034 04F4      		brge .L10
+ 115 0036 0895      		ret
+ 116               	.L4:
+ 117               		.loc 1 80 5 discriminator 2 view .LVU27
+ 118 0038 3395      		inc r19
+ 119 003a 2330      		cpi r18,3
+ 120 003c 3105      		cpc r19,__zero_reg__
+ 121 003e 04F0      		brlt .L2
+ 122               	.L10:
+ 123               		.loc 1 80 5 is_stmt 1 discriminator 5 view .LVU28
+ 124               		.loc 1 80 5 discriminator 5 view .LVU29
+ 125 0040 5D98      		cbi 0xb,5
+ 126 0042 0895      		ret
+ 127               	.LVL2:
+ 128               	.L8:
+  75:../../tmk_core/protocol/serial_uart.c ****         return 0;
+ 129               		.loc 1 75 16 is_stmt 0 view .LVU30
+ 130 0044 80E0      		ldi r24,0
+ 131               	.LVL3:
+ 132               	.L2:
+ 133               	/* epilogue start */
+  81:../../tmk_core/protocol/serial_uart.c ****     return data;
+  82:../../tmk_core/protocol/serial_uart.c **** }
+ 134               		.loc 1 82 1 view .LVU31
+ 135 0046 0895      		ret
+ 136               		.cfi_endproc
+ 137               	.LFE1:
+ 139               		.section	.text.serial_recv2,"ax",@progbits
+ 140               	.global	serial_recv2
+ 142               	serial_recv2:
+ 143               	.LFB2:
+  83:../../tmk_core/protocol/serial_uart.c **** 
+  84:../../tmk_core/protocol/serial_uart.c **** int16_t serial_recv2(void)
+  85:../../tmk_core/protocol/serial_uart.c **** {
+ 144               		.loc 1 85 1 is_stmt 1 view -0
+ 145               		.cfi_startproc
+ 146               	/* prologue: function */
+ 147               	/* frame size = 0 */
+ 148               	/* stack size = 0 */
+ 149               	.L__stack_usage = 0
+  86:../../tmk_core/protocol/serial_uart.c ****     uint8_t data = 0;
+ 150               		.loc 1 86 5 view .LVU33
+ 151               	.LVL4:
+  87:../../tmk_core/protocol/serial_uart.c ****     if (rbuf_head == rbuf_tail) {
+ 152               		.loc 1 87 5 view .LVU34
+ 153               		.loc 1 87 19 is_stmt 0 view .LVU35
+ 154 0000 4091 0000 		lds r20,rbuf_head
+ 155 0004 9091 0000 		lds r25,rbuf_tail
+ 156               		.loc 1 87 8 view .LVU36
+ 157 0008 4917      		cp r20,r25
+ 158 000a 01F0      		breq .L18
+  88:../../tmk_core/protocol/serial_uart.c ****         return -1;
+  89:../../tmk_core/protocol/serial_uart.c ****     }
+  90:../../tmk_core/protocol/serial_uart.c **** 
+  91:../../tmk_core/protocol/serial_uart.c ****     data = rbuf[rbuf_tail];
+ 159               		.loc 1 91 5 is_stmt 1 view .LVU37
+ 160               		.loc 1 91 16 is_stmt 0 view .LVU38
+ 161 000c 292F      		mov r18,r25
+ 162 000e 30E0      		ldi r19,0
+ 163               		.loc 1 91 10 view .LVU39
+ 164 0010 F901      		movw r30,r18
+ 165 0012 E050      		subi r30,lo8(-(rbuf))
+ 166 0014 F040      		sbci r31,hi8(-(rbuf))
+ 167 0016 8081      		ld r24,Z
+ 168               	.LVL5:
+  92:../../tmk_core/protocol/serial_uart.c ****     rbuf_tail = (rbuf_tail + 1) % RBUF_SIZE;
+ 169               		.loc 1 92 5 is_stmt 1 view .LVU40
+ 170               		.loc 1 92 28 is_stmt 0 view .LVU41
+ 171 0018 2F5F      		subi r18,-1
+ 172 001a 3F4F      		sbci r19,-1
+ 173               		.loc 1 92 33 view .LVU42
+ 174 001c 3327      		clr r19
+ 175               		.loc 1 92 15 view .LVU43
+ 176 001e 9F5F      		subi r25,lo8(-(1))
+ 177 0020 9093 0000 		sts rbuf_tail,r25
+  93:../../tmk_core/protocol/serial_uart.c ****     rbuf_check_rts_lo();
+ 178               		.loc 1 93 5 is_stmt 1 view .LVU44
+ 179               		.loc 1 93 5 view .LVU45
+ 180 0024 642F      		mov r22,r20
+ 181 0026 70E0      		ldi r23,0
+ 182 0028 261B      		sub r18,r22
+ 183 002a 370B      		sbc r19,r23
+ 184 002c 4917      		cp r20,r25
+ 185 002e 00F4      		brsh .L13
+ 186               	.L21:
+ 187               		.loc 1 93 5 is_stmt 0 discriminator 2 view .LVU46
+ 188 0030 2330      		cpi r18,3
+ 189 0032 3105      		cpc r19,__zero_reg__
+ 190 0034 04F0      		brlt .L17
+ 191               		.loc 1 93 5 is_stmt 1 discriminator 5 view .LVU47
+ 192               		.loc 1 93 5 discriminator 5 view .LVU48
+ 193 0036 5D98      		cbi 0xb,5
+ 194               	.L17:
+  94:../../tmk_core/protocol/serial_uart.c ****     return data;
+ 195               		.loc 1 94 5 view .LVU49
+ 196               		.loc 1 94 12 is_stmt 0 view .LVU50
+ 197 0038 90E0      		ldi r25,0
+ 198 003a 0895      		ret
+ 199               	.L13:
+  93:../../tmk_core/protocol/serial_uart.c ****     rbuf_check_rts_lo();
+ 200               		.loc 1 93 5 discriminator 2 view .LVU51
+ 201 003c 3395      		inc r19
+ 202 003e 00C0      		rjmp .L21
+ 203               	.LVL6:
+ 204               	.L18:
+  88:../../tmk_core/protocol/serial_uart.c ****     }
+ 205               		.loc 1 88 16 view .LVU52
+ 206 0040 8FEF      		ldi r24,lo8(-1)
+ 207 0042 9FEF      		ldi r25,lo8(-1)
+ 208               	/* epilogue start */
+  95:../../tmk_core/protocol/serial_uart.c **** }
+ 209               		.loc 1 95 1 view .LVU53
+ 210 0044 0895      		ret
+ 211               		.cfi_endproc
+ 212               	.LFE2:
+ 214               		.section	.text.serial_send,"ax",@progbits
+ 215               	.global	serial_send
+ 217               	serial_send:
+ 218               	.LFB3:
+  96:../../tmk_core/protocol/serial_uart.c **** 
+  97:../../tmk_core/protocol/serial_uart.c **** void serial_send(uint8_t data)
+  98:../../tmk_core/protocol/serial_uart.c **** {
+ 219               		.loc 1 98 1 is_stmt 1 view -0
+ 220               		.cfi_startproc
+ 221               	/* prologue: function */
+ 222               	/* frame size = 0 */
+ 223               	/* stack size = 0 */
+ 224               	.L__stack_usage = 0
+ 225               	.LVL7:
+ 226               	.L23:
+  99:../../tmk_core/protocol/serial_uart.c ****     while (!SERIAL_UART_TXD_READY) ;
+ 227               		.loc 1 99 36 discriminator 1 view .LVU55
+ 228               		.loc 1 99 13 is_stmt 0 discriminator 1 view .LVU56
+ 229 0000 9091 C800 		lds r25,200
+ 230               		.loc 1 99 11 discriminator 1 view .LVU57
+ 231 0004 95FF      		sbrs r25,5
+ 232 0006 00C0      		rjmp .L23
+ 100:../../tmk_core/protocol/serial_uart.c ****     SERIAL_UART_DATA = data;
+ 233               		.loc 1 100 5 is_stmt 1 view .LVU58
+ 234               		.loc 1 100 22 is_stmt 0 view .LVU59
+ 235 0008 8093 CE00 		sts 206,r24
+ 236               	/* epilogue start */
+ 101:../../tmk_core/protocol/serial_uart.c **** }
+ 237               		.loc 1 101 1 view .LVU60
+ 238 000c 0895      		ret
+ 239               		.cfi_endproc
+ 240               	.LFE3:
+ 242               		.section	.text.__vector_25,"ax",@progbits
+ 243               	.global	__vector_25
+ 245               	__vector_25:
+ 246               	.LFB4:
+ 102:../../tmk_core/protocol/serial_uart.c **** 
+ 103:../../tmk_core/protocol/serial_uart.c **** // USART RX complete interrupt
+ 104:../../tmk_core/protocol/serial_uart.c **** ISR(SERIAL_UART_RXD_VECT)
+ 105:../../tmk_core/protocol/serial_uart.c **** {
+ 247               		.loc 1 105 1 is_stmt 1 view -0
+ 248               		.cfi_startproc
+ 249 0000 2F93 2FB7 		__gcc_isr 1
+ 249      2F93 
+ 250 0006 3F93      		push r19
+ 251               	.LCFI0:
+ 252               		.cfi_def_cfa_offset 3
+ 253               		.cfi_offset 19, -2
+ 254 0008 4F93      		push r20
+ 255               	.LCFI1:
+ 256               		.cfi_def_cfa_offset 4
+ 257               		.cfi_offset 20, -3
+ 258 000a 5F93      		push r21
+ 259               	.LCFI2:
+ 260               		.cfi_def_cfa_offset 5
+ 261               		.cfi_offset 21, -4
+ 262 000c 8F93      		push r24
+ 263               	.LCFI3:
+ 264               		.cfi_def_cfa_offset 6
+ 265               		.cfi_offset 24, -5
+ 266 000e 9F93      		push r25
+ 267               	.LCFI4:
+ 268               		.cfi_def_cfa_offset 7
+ 269               		.cfi_offset 25, -6
+ 270 0010 EF93      		push r30
+ 271               	.LCFI5:
+ 272               		.cfi_def_cfa_offset 8
+ 273               		.cfi_offset 30, -7
+ 274 0012 FF93      		push r31
+ 275               	.LCFI6:
+ 276               		.cfi_def_cfa_offset 9
+ 277               		.cfi_offset 31, -8
+ 278               	/* prologue: Signal */
+ 279               	/* frame size = 0 */
+ 280               	/* stack size = 7...11 */
+ 281               	.L__stack_usage = 7 + __gcc_isr.n_pushed
+ 106:../../tmk_core/protocol/serial_uart.c ****     uint8_t next = (rbuf_head + 1) % RBUF_SIZE;
+ 282               		.loc 1 106 5 view .LVU62
+ 283               		.loc 1 106 31 is_stmt 0 view .LVU63
+ 284 0014 E091 0000 		lds r30,rbuf_head
+ 285               		.loc 1 106 13 view .LVU64
+ 286 0018 81E0      		ldi r24,lo8(1)
+ 287 001a 8E0F      		add r24,r30
+ 288               	.LVL8:
+ 107:../../tmk_core/protocol/serial_uart.c ****     if (next != rbuf_tail) {
+ 289               		.loc 1 107 5 is_stmt 1 view .LVU65
+ 290               		.loc 1 107 14 is_stmt 0 view .LVU66
+ 291 001c 2091 0000 		lds r18,rbuf_tail
+ 292               		.loc 1 107 8 view .LVU67
+ 293 0020 2817      		cp r18,r24
+ 294 0022 01F0      		breq .L27
+ 108:../../tmk_core/protocol/serial_uart.c ****         rbuf[rbuf_head] = SERIAL_UART_DATA;
+ 295               		.loc 1 108 9 is_stmt 1 view .LVU68
+ 296               		.loc 1 108 27 is_stmt 0 view .LVU69
+ 297 0024 9091 CE00 		lds r25,206
+ 106:../../tmk_core/protocol/serial_uart.c ****     uint8_t next = (rbuf_head + 1) % RBUF_SIZE;
+ 298               		.loc 1 106 31 view .LVU70
+ 299 0028 F0E0      		ldi r31,0
+ 300               		.loc 1 108 25 view .LVU71
+ 301 002a E050      		subi r30,lo8(-(rbuf))
+ 302 002c F040      		sbci r31,hi8(-(rbuf))
+ 303 002e 9083      		st Z,r25
+ 109:../../tmk_core/protocol/serial_uart.c ****         rbuf_head = next;
+ 304               		.loc 1 109 9 is_stmt 1 view .LVU72
+ 305               		.loc 1 109 19 is_stmt 0 view .LVU73
+ 306 0030 8093 0000 		sts rbuf_head,r24
+ 307               	.L27:
+ 110:../../tmk_core/protocol/serial_uart.c ****     }
+ 111:../../tmk_core/protocol/serial_uart.c ****     rbuf_check_rts_hi();
+ 308               		.loc 1 111 5 is_stmt 1 view .LVU74
+ 309               		.loc 1 111 5 view .LVU75
+ 310 0034 3091 0000 		lds r19,rbuf_head
+ 311 0038 432F      		mov r20,r19
+ 312 003a 50E0      		ldi r21,0
+ 313 003c 822F      		mov r24,r18
+ 314               	.LVL9:
+ 315               		.loc 1 111 5 is_stmt 0 view .LVU76
+ 316 003e 90E0      		ldi r25,0
+ 317 0040 841B      		sub r24,r20
+ 318 0042 950B      		sbc r25,r21
+ 319 0044 3217      		cp r19,r18
+ 320 0046 00F4      		brsh .L28
+ 321               	.L35:
+ 322               		.loc 1 111 5 discriminator 2 view .LVU77
+ 323 0048 0397      		sbiw r24,3
+ 324 004a 04F4      		brge .L26
+ 325               		.loc 1 111 5 is_stmt 1 discriminator 5 view .LVU78
+ 326               		.loc 1 111 5 discriminator 5 view .LVU79
+ 327 004c 5D9A      		sbi 0xb,5
+ 328               	.L26:
+ 329               	/* epilogue start */
+ 112:../../tmk_core/protocol/serial_uart.c **** }
+ 330               		.loc 1 112 1 is_stmt 0 view .LVU80
+ 331 004e FF91      		pop r31
+ 332 0050 EF91      		pop r30
+ 333 0052 9F91      		pop r25
+ 334 0054 8F91      		pop r24
+ 335 0056 5F91      		pop r21
+ 336 0058 4F91      		pop r20
+ 337 005a 3F91      		pop r19
+ 338 005c 2F91 2FBF 		__gcc_isr 2
+ 338      2F91 
+ 339 0062 1895      		reti
+ 340               	.L28:
+ 111:../../tmk_core/protocol/serial_uart.c **** }
+ 341               		.loc 1 111 5 discriminator 2 view .LVU81
+ 342 0064 9395      		inc r25
+ 343 0066 00C0      		rjmp .L35
+ 344               		__gcc_isr 0,r18
+ 345               		.cfi_endproc
+ 346               	.LFE4:
+ 348               		.section	.bss.rbuf_tail,"aw",@nobits
+ 351               	rbuf_tail:
+ 352 0000 00        		.zero	1
+ 353               		.section	.bss.rbuf_head,"aw",@nobits
+ 356               	rbuf_head:
+ 357 0000 00        		.zero	1
+ 358               		.section	.bss.rbuf,"aw",@nobits
+ 361               	rbuf:
+ 362 0000 0000 0000 		.zero	256
+ 362      0000 0000 
+ 362      0000 0000 
+ 362      0000 0000 
+ 362      0000 0000 
+ 363               		.text
+ 364               	.Letext0:
+ 365               		.file 2 "/usr/avr/include/stdint.h"
+DEFINED SYMBOLS
+                            *ABS*:0000000000000000 serial_uart.c
+     /tmp/ccTgqOb5.s:2      *ABS*:000000000000003e __SP_H__
+     /tmp/ccTgqOb5.s:3      *ABS*:000000000000003d __SP_L__
+     /tmp/ccTgqOb5.s:4      *ABS*:000000000000003f __SREG__
+     /tmp/ccTgqOb5.s:5      *ABS*:0000000000000000 __tmp_reg__
+     /tmp/ccTgqOb5.s:6      *ABS*:0000000000000001 __zero_reg__
+     /tmp/ccTgqOb5.s:13     .text.serial_init:0000000000000000 serial_init
+     /tmp/ccTgqOb5.s:67     .text.serial_recv:0000000000000000 serial_recv
+     /tmp/ccTgqOb5.s:356    .bss.rbuf_head:0000000000000000 rbuf_head
+     /tmp/ccTgqOb5.s:351    .bss.rbuf_tail:0000000000000000 rbuf_tail
+     /tmp/ccTgqOb5.s:361    .bss.rbuf:0000000000000000 rbuf
+     /tmp/ccTgqOb5.s:142    .text.serial_recv2:0000000000000000 serial_recv2
+     /tmp/ccTgqOb5.s:217    .text.serial_send:0000000000000000 serial_send
+     /tmp/ccTgqOb5.s:245    .text.__vector_25:0000000000000000 __vector_25
+                            *ABS*:0000000000000002 __gcc_isr.n_pushed.001
+
+UNDEFINED SYMBOLS
+__do_clear_bss
