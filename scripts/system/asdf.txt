@@ -1,0 +1,10 @@
+network={
+	ssid="ATT2hG4EzQ"
+	#psk="2cny6%s=ifh2"
+	psk=0be28d18d6f7dfba4d73d5ad1098fedbe22d4331bdec8e0d045a33332505dcfa
+}
+network={
+	ssid="ATT2hG4EzQ"
+	#psk="2cny6%s=ifh2"
+	psk=0be28d18d6f7dfba4d73d5ad1098fedbe22d4331bdec8e0d045a33332505dcfa
+}
