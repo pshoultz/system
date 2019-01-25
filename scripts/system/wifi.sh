@@ -31,6 +31,6 @@ case $command in
         sudo killall wpa_supplicant dhcpcd && echo WIFI: disconnect successful!
         ;;
     *)
-        echo "usage: start; stop; scan; add <ssid> <password>;";;
+        echo "commands: start; stop; scan; add <ssid> <password>;";;
 esac
 
