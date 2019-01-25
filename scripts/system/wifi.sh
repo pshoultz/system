@@ -30,5 +30,7 @@ case $command in
         echo =======================
         sudo killall wpa_supplicant dhcpcd && echo WIFI: disconnect successful!
         ;;
+    *)
+        echo "usage: start; stop; scan; add <ssid> <password>;";;
 esac
 
