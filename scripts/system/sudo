@@ -1,0 +1,15 @@
+network={
+	ssid="uwf-argo-air"
+	#psk="happy^pledges"
+	psk=bdbce66133ddcfa723b0478d7372f55d2c6bfc88a7a4add6ffce1954bff8af0e
+}
+network={
+	ssid="uwf-argo-air"
+	#psk="happy^pledges"
+	psk=bdbce66133ddcfa723b0478d7372f55d2c6bfc88a7a4add6ffce1954bff8af0e
+}
+network={
+	ssid="DrowsyPoet"
+	#psk="erniedog"
+	psk=b8ddb4d999f4feaec457d6bc349a8e7ed5c2d61d9a0fe86b2839396466cf57ef
+}

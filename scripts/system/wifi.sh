@@ -16,7 +16,8 @@ case $command in
     "add")
         echo WIFI: generating wpa_passphrase
         echo =======================
-        wpa_passphrase $ssid $password >> /etc/wpa_supplicant/wpa_supplicant.conf && echo WIFI: done generating wpa_passphrase!
+        #wpa_passphrase $ssid $password >> /etc/wpa_supplicant/wpa_supplicant.conf && echo WIFI: done generating wpa_passphrase!
+        wpa_passphrase $ssid $password >> sudo /etc/wpa_supplicant/wpa_supplicant.conf && echo WIFI: done generating wpa_passphrase!
         ;;  
     #start wifi connection
     "start")
